@@ -1,0 +1,29 @@
+{
+  "productName": "Flux Explorer",
+  "version": "0.1.0",
+  "identifier": "com.flux.explorer",
+  "build": {
+    "frontendDist": "../src",
+    "devUrl": "http://localhost:1420"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Flux Explorer",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "decorations": true,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "opener": {}
+  }
+}
