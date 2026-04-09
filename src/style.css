@@ -1159,6 +1159,12 @@ body {
   tab-size: 4;
 }
 
+/* Syntax highlighting */
+.hl-keyword { color: var(--red); font-weight: 600; }
+.hl-string  { color: var(--green); }
+.hl-comment { color: var(--fg4); font-style: italic; }
+.hl-number  { color: var(--purple); }
+
 .preview-content .preview-info {
   display: flex;
   flex-direction: column;

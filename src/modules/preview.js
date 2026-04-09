@@ -1,6 +1,7 @@
 import { state, invoke } from './state.js';
 import { formatSize, formatDate, escapeHtml, escapeAttr } from './utils.js';
 import { getFileIcon } from './icons.js';
+import { highlight } from './highlight.js';
 
 const PREVIEW_TEXT_EXTS = ['txt', 'md', 'log', 'cfg', 'conf', 'ini', 'env', 'js', 'ts', 'jsx', 'tsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'rb', 'php', 'swift', 'kt', 'lua', 'sh', 'bash', 'zsh', 'fish', 'html', 'css', 'scss', 'less', 'json', 'yaml', 'yml', 'toml', 'xml', 'sql', 'graphql', 'vue', 'svelte', 'Makefile', 'Dockerfile'];
 const PREVIEW_IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif', 'svg'];
@@ -40,7 +41,8 @@ export async function openPreview(entry) {
   } else if (PREVIEW_TEXT_EXTS.includes(ext) || entry.name.startsWith('.') || entry.size < 500000) {
     try {
       const text = await invoke('read_text_preview', { path: entry.path, maxLines: 200 });
-      content.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
+      const highlighted = highlight(text, ext);
+      content.innerHTML = `<pre>${highlighted}</pre>`;
     } catch (_) {
       showPreviewInfo(content, entry);
     }
