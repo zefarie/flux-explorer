@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Flux Explorer
+Comment=Lightweight file explorer for Linux
+GenericName=File Manager
+Exec=flux-explorer %U
+Icon=flux-explorer
+Terminal=false
+Type=Application
+Categories=System;FileTools;FileManager;
+MimeType=inode/directory;
+Keywords=files;folders;explorer;manager;
+StartupNotify=true
