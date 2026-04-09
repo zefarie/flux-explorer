@@ -20,6 +20,9 @@ export function sortEntries(entries) {
       case 'modified':
         cmp = a.modified - b.modified;
         break;
+      case 'type':
+        cmp = a.extension.localeCompare(b.extension) || a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+        break;
     }
     return state.sortAsc ? cmp : -cmp;
   });
@@ -53,6 +56,7 @@ export function renderEntries() {
   if (state.viewMode === 'list') {
     html += `<div class="list-header">
       <span data-sort="name" class="${state.sortBy === 'name' ? 'sort-active' : ''}">Nom ${state.sortBy === 'name' ? (state.sortAsc ? '\u2191' : '\u2193') : ''}</span>
+      <span data-sort="type" class="${state.sortBy === 'type' ? 'sort-active' : ''}">Type ${state.sortBy === 'type' ? (state.sortAsc ? '\u2191' : '\u2193') : ''}</span>
       <span data-sort="size" class="${state.sortBy === 'size' ? 'sort-active' : ''}" style="text-align:right">Taille ${state.sortBy === 'size' ? (state.sortAsc ? '\u2191' : '\u2193') : ''}</span>
       <span data-sort="modified" class="${state.sortBy === 'modified' ? 'sort-active' : ''}">Modifie ${state.sortBy === 'modified' ? (state.sortAsc ? '\u2191' : '\u2193') : ''}</span>
     </div>`;
@@ -86,6 +90,7 @@ export function renderEntries() {
           <div class="file-icon ${iconInfo.colorClass}">${iconInfo.svg}</div>
           <div class="file-name">${escapeHtml(entry.name)}</div>
         </div>
+        <div class="file-type">${entry.is_dir ? 'Dossier' : (entry.extension ? entry.extension.toUpperCase() : '-')}</div>
         <div class="file-size">${entry.is_dir ? '-' : formatSize(entry.size)}</div>
         <div class="file-date">${formatDate(entry.modified)}</div>
       </div>`;

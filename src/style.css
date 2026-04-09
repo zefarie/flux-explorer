@@ -633,7 +633,7 @@ body {
 
 .view-list .list-header {
   display: grid;
-  grid-template-columns: 1fr 100px 160px;
+  grid-template-columns: 1fr 80px 100px 160px;
   padding: 8px 14px;
   font-size: 11px;
   font-weight: 600;
@@ -652,7 +652,7 @@ body {
 
 .view-list .file-item {
   display: grid;
-  grid-template-columns: 1fr 100px 160px;
+  grid-template-columns: 1fr 80px 100px 160px;
   align-items: center;
   padding: 8px 14px;
   border-radius: var(--radius-sm);
@@ -692,6 +692,11 @@ body {
 }
 .view-list .file-item.selected .file-name {
   color: var(--fg);
+}
+.view-list .file-item .file-type {
+  font-size: 11px;
+  color: var(--fg4);
+  text-transform: uppercase;
 }
 .view-list .file-item .file-size {
   font-size: 11.5px;
