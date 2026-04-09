@@ -13,8 +13,12 @@ import { setupPreview } from './modules/preview.js';
 import { loadQuickAccess } from './modules/sidebar.js';
 import { refresh, goBack, goForward, goUp } from './modules/navigation.js';
 import { setupTabs, initTabs } from './modules/tabs.js';
+import { setupTitlebar } from './modules/titlebar.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // Titlebar
+  setupTitlebar();
+
   // Toolbar buttons
   document.getElementById('btn-back').addEventListener('click', goBack);
   document.getElementById('btn-forward').addEventListener('click', goForward);

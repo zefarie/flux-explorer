@@ -7,6 +7,22 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Titlebar -->
+  <div id="titlebar" data-tauri-drag-region>
+    <div class="titlebar-title" data-tauri-drag-region>Flux Explorer</div>
+    <div class="titlebar-controls">
+      <button id="btn-minimize" class="titlebar-btn" title="Minimiser">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button id="btn-maximize" class="titlebar-btn" title="Maximiser">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+      </button>
+      <button id="btn-close" class="titlebar-btn titlebar-btn-close" title="Fermer">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+
   <!-- Toolbar -->
   <div id="toolbar">
     <div class="toolbar-nav">
