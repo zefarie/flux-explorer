@@ -3,6 +3,7 @@
 // ============================================
 
 const { invoke } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
 const { getCurrentWindow } = window.__TAURI__.window;
 
 // Preferences persistence
@@ -69,6 +70,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-view-grid').classList.toggle('active', state.viewMode === 'grid');
   document.getElementById('btn-view-list').classList.toggle('active', state.viewMode === 'list');
   document.getElementById('btn-hidden').classList.toggle('active', state.showHidden);
+
+  // Auto-refresh when filesystem changes
+  listen('fs-changed', () => refresh());
 
   const home = await invoke('get_home');
   const startPath = savedPrefs.lastPath || home;
@@ -139,6 +143,7 @@ async function navigateTo(path, addToHistory = true) {
     updateSidebar();
     updateStatusBar();
     savePrefs();
+    invoke('watch_directory', { path }).catch(() => {});
   } catch (err) {
     showToast(err, 'error');
   }

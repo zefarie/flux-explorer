@@ -2,13 +2,16 @@
 
 use base64::Engine;
 use image::imageops::FilterType;
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::fs;
 use std::io::{BufRead, BufReader, Cursor};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::UNIX_EPOCH;
+use std::sync::Mutex;
+use std::time::{Duration, Instant, UNIX_EPOCH};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Serialize, Clone)]
 struct FileEntry {
@@ -35,6 +38,11 @@ struct QuickAccess {
     name: String,
     path: String,
     icon: String,
+}
+
+struct WatcherState {
+    watcher: Option<RecommendedWatcher>,
+    watched_path: Option<String>,
 }
 
 #[tauri::command]
@@ -541,9 +549,49 @@ fn dirs_home() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/home".to_string())
 }
 
+#[tauri::command]
+fn watch_directory(path: String, app: AppHandle) -> Result<(), String> {
+    let watcher_state = app.state::<Mutex<WatcherState>>();
+    let mut state = watcher_state.lock().map_err(|e| e.to_string())?;
+
+    // Already watching this path
+    if state.watched_path.as_deref() == Some(&path) {
+        return Ok(());
+    }
+
+    // Drop old watcher
+    state.watcher = None;
+    state.watched_path = None;
+
+    let app_handle = app.clone();
+    let last_emit = std::sync::Arc::new(Mutex::new(Instant::now() - Duration::from_secs(1)));
+
+    let debounce = last_emit.clone();
+    let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+        if res.is_ok() {
+            let mut last = debounce.lock().unwrap();
+            if last.elapsed() >= Duration::from_millis(300) {
+                *last = Instant::now();
+                let _ = app_handle.emit("fs-changed", ());
+            }
+        }
+    }).map_err(|e| format!("Cannot create watcher: {}", e))?;
+
+    watcher.watch(Path::new(&path), RecursiveMode::NonRecursive)
+        .map_err(|e| format!("Cannot watch directory: {}", e))?;
+
+    state.watcher = Some(watcher);
+    state.watched_path = Some(path);
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(Mutex::new(WatcherState {
+            watcher: None,
+            watched_path: None,
+        }))
         .invoke_handler(tauri::generate_handler![
             list_directory,
             get_quick_access,
@@ -562,6 +610,7 @@ fn main() {
             search_files,
             get_thumbnail,
             get_video_thumbnail,
+            watch_directory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Flux Explorer");
