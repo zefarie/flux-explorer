@@ -5,7 +5,7 @@ import { renderEntries, sortEntries, updateSelection, setViewMode, toggleHidden 
 import { clipboardCopy, clipboardCut, clipboardPaste } from './clipboard.js';
 import { showRenameDialog, showNewFolderDialog, showDeleteDialog } from './dialogs.js';
 import { openPreview, closePreview } from './preview.js';
-import { performSearch } from './search.js';
+import { performSearch, toggleSearchContent } from './search.js';
 import { createTab, closeTab, getActiveTab, getTabCount } from './tabs.js';
 
 export function setupKeyboard() {
@@ -260,4 +260,6 @@ export function setupToolbarSearch() {
       renderEntries();
     }
   });
+
+  document.getElementById('btn-search-content')?.addEventListener('click', toggleSearchContent);
 }

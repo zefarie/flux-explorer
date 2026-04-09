@@ -436,6 +436,32 @@ body {
   color: var(--fg4);
   flex-shrink: 0;
 }
+.search-content-btn {
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: none;
+  color: var(--fg4);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  flex-shrink: 0;
+  transition: all var(--transition);
+  opacity: 0;
+}
+.search-box:focus-within .search-content-btn {
+  opacity: 1;
+}
+.search-content-btn:hover {
+  background: var(--bg2);
+  color: var(--fg);
+}
+.search-content-btn.active {
+  color: var(--yellow);
+  background: var(--bg2);
+}
 .search-box:focus-within .search-hint {
   display: none;
 }

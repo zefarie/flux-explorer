@@ -423,10 +423,29 @@ fn get_parent(path: String) -> Option<String> {
 }
 
 #[tauri::command]
-fn search_files(path: String, query: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
+fn search_files(
+    path: String,
+    query: String,
+    show_hidden: bool,
+    max_depth: Option<usize>,
+    max_results: Option<usize>,
+    search_content: Option<bool>,
+) -> Result<Vec<FileEntry>, String> {
     let mut results = Vec::new();
     let query_lower = query.to_lowercase();
-    search_recursive(Path::new(&path), &query_lower, show_hidden, &mut results, 0, 5);
+    let depth_limit = max_depth.unwrap_or(10);
+    let result_limit = max_results.unwrap_or(500);
+    let content = search_content.unwrap_or(false);
+    search_recursive(
+        Path::new(&path),
+        &query_lower,
+        show_hidden,
+        &mut results,
+        0,
+        depth_limit,
+        result_limit,
+        content,
+    );
     Ok(results)
 }
 
@@ -437,8 +456,10 @@ fn search_recursive(
     results: &mut Vec<FileEntry>,
     depth: usize,
     max_depth: usize,
+    max_results: usize,
+    search_content: bool,
 ) {
-    if depth > max_depth || results.len() >= 100 {
+    if depth > max_depth || results.len() >= max_results {
         return;
     }
 
@@ -448,6 +469,10 @@ fn search_recursive(
     };
 
     for entry in entries.flatten() {
+        if results.len() >= max_results {
+            return;
+        }
+
         let name = entry.file_name().to_string_lossy().to_string();
         let is_hidden = name.starts_with('.');
 
@@ -461,7 +486,16 @@ fn search_recursive(
             Err(_) => continue,
         };
 
-        if name.to_lowercase().contains(query) {
+        let name_match = name.to_lowercase().contains(query);
+
+        // Content search for text files
+        let content_match = if !name_match && search_content && !metadata.is_dir() && metadata.len() < 1_000_000 {
+            file_contains(&path_buf, query)
+        } else {
+            false
+        };
+
+        if name_match || content_match {
             let is_symlink = metadata.is_symlink();
             let real_metadata = if is_symlink {
                 fs::metadata(&path_buf).unwrap_or(metadata.clone())
@@ -497,9 +531,28 @@ fn search_recursive(
         }
 
         if metadata.is_dir() && !metadata.is_symlink() {
-            search_recursive(&path_buf, query, show_hidden, results, depth + 1, max_depth);
+            search_recursive(&path_buf, query, show_hidden, results, depth + 1, max_depth, max_results, search_content);
         }
     }
+}
+
+fn file_contains(path: &Path, query: &str) -> bool {
+    let file = match fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    let reader = BufReader::new(file);
+    for line in reader.lines().take(500) {
+        match line {
+            Ok(l) => {
+                if l.to_lowercase().contains(query) {
+                    return true;
+                }
+            }
+            Err(_) => return false, // binary file
+        }
+    }
+    false
 }
 
 fn thumb_cache_dir() -> PathBuf {
