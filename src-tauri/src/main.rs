@@ -195,7 +195,13 @@ fn rename_item(path: String, new_name: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn delete_items(paths: Vec<String>) -> Result<(), String> {
+async fn delete_items(paths: Vec<String>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || delete_items_sync(paths))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn delete_items_sync(paths: Vec<String>) -> Result<(), String> {
     for path in &paths {
         let p = Path::new(path);
         if !p.exists() {
@@ -214,7 +220,13 @@ fn delete_items(paths: Vec<String>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn copy_items(sources: Vec<String>, destination: String) -> Result<(), String> {
+async fn copy_items(sources: Vec<String>, destination: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || copy_items_sync(sources, destination))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn copy_items_sync(sources: Vec<String>, destination: String) -> Result<(), String> {
     let dest = PathBuf::from(&destination);
     if !dest.is_dir() {
         return Err(format!("Destination is not a directory: {}", destination));
@@ -234,7 +246,13 @@ fn copy_items(sources: Vec<String>, destination: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn move_items(sources: Vec<String>, destination: String) -> Result<(), String> {
+async fn move_items(sources: Vec<String>, destination: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || move_items_sync(sources, destination))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn move_items_sync(sources: Vec<String>, destination: String) -> Result<(), String> {
     let dest = PathBuf::from(&destination);
     if !dest.is_dir() {
         return Err(format!("Destination is not a directory: {}", destination));
@@ -423,7 +441,20 @@ fn get_parent(path: String) -> Option<String> {
 }
 
 #[tauri::command]
-fn search_files(
+async fn search_files(
+    path: String,
+    query: String,
+    show_hidden: bool,
+    max_depth: Option<usize>,
+    max_results: Option<usize>,
+    search_content: Option<bool>,
+) -> Result<Vec<FileEntry>, String> {
+    tokio::task::spawn_blocking(move || search_files_sync(path, query, show_hidden, max_depth, max_results, search_content))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn search_files_sync(
     path: String,
     query: String,
     show_hidden: bool,
@@ -693,7 +724,13 @@ struct FileProperties {
 }
 
 #[tauri::command]
-fn get_file_properties(path: String) -> Result<FileProperties, String> {
+async fn get_file_properties(path: String) -> Result<FileProperties, String> {
+    tokio::task::spawn_blocking(move || get_file_properties_sync(path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_file_properties_sync(path: String) -> Result<FileProperties, String> {
     let p = Path::new(&path);
     let metadata = fs::symlink_metadata(p).map_err(|e| format!("Cannot read metadata: {}", e))?;
     let real_metadata = if metadata.is_symlink() {
