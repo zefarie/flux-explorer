@@ -52,6 +52,13 @@ export async function openPreview(entry) {
         <source src="file://${escapeAttr(entry.path)}" type="${mimeMap[ext] || 'audio/mpeg'}">
       </audio>
     </div>`;
+  } else if (ext === 'pdf') {
+    try {
+      const dataUrl = await invoke('get_pdf_preview', { path: entry.path });
+      content.innerHTML = `<img src="${dataUrl}" alt="${escapeAttr(entry.name)}" style="max-width:100%;max-height:100%">`;
+    } catch (err) {
+      content.innerHTML = `<div class="preview-info"><p style="color:var(--fg4)">${escapeHtml(String(err))}</p></div>`;
+    }
   } else if (PREVIEW_TEXT_EXTS.includes(ext) || entry.name.startsWith('.') || entry.size < 500000) {
     try {
       const text = await invoke('read_text_preview', { path: entry.path, maxLines: 200 });

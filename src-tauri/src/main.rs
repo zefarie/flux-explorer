@@ -598,6 +598,29 @@ fn get_video_thumbnail(path: String, size: u32) -> Result<String, String> {
     Ok(format!("data:image/jpeg;base64,{}", b64))
 }
 
+#[tauri::command]
+fn get_pdf_preview(path: String) -> Result<String, String> {
+    // Use pdftoppm (poppler-utils) to render first page as JPEG
+    let output = Command::new("pdftoppm")
+        .args([
+            "-jpeg",
+            "-f", "1",
+            "-l", "1",
+            "-r", "150",
+            "-singlefile",
+            &path,
+        ])
+        .output()
+        .map_err(|e| format!("pdftoppm error: {}", e))?;
+
+    if !output.status.success() {
+        return Err("pdftoppm failed - install poppler-utils".to_string());
+    }
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&output.stdout);
+    Ok(format!("data:image/jpeg;base64,{}", b64))
+}
+
 #[derive(Serialize)]
 struct FileProperties {
     name: String,
@@ -870,6 +893,7 @@ fn main() {
             watch_directory,
             get_disk_info,
             get_file_properties,
+            get_pdf_preview,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Flux Explorer");
