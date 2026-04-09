@@ -512,6 +512,23 @@ body {
 .sidebar-item.active svg {
   opacity: 1;
 }
+.bookmark-remove {
+  margin-left: auto;
+  opacity: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 3px;
+  transition: all var(--transition);
+}
+.sidebar-item:hover .bookmark-remove {
+  opacity: 0.5;
+}
+.bookmark-remove:hover {
+  opacity: 1 !important;
+  background: var(--bg3);
+}
 
 /* Disk usage */
 .disk-info {

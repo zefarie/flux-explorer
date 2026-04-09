@@ -4,6 +4,7 @@ import { updateSelection } from './files.js';
 import { navigateTo } from './navigation.js';
 import { clipboardCopy, clipboardCut, clipboardPaste } from './clipboard.js';
 import { showRenameDialog, showNewFolderDialog, showNewFileDialog, showDeleteDialog } from './dialogs.js';
+import { toggleBookmark, isBookmarked } from './bookmarks.js';
 
 export function setupContextMenu() {
   const menu = document.getElementById('context-menu');
@@ -33,6 +34,16 @@ export function setupContextMenu() {
     menu.querySelector('[data-action="paste"]').classList.toggle('hidden', state.clipboard.paths.length === 0);
     menu.querySelector('[data-action="rename"]').classList.toggle('hidden', !hasTarget);
     menu.querySelector('[data-action="delete"]').classList.toggle('hidden', !hasTarget);
+
+    // Bookmark: show only for directories, update label
+    const targetEntry = hasTarget ? state.entries.find(en => en.path === state.contextTarget) : null;
+    const isDir = targetEntry?.is_dir || false;
+    const bookmarkItem = menu.querySelector('[data-action="toggle-bookmark"]');
+    bookmarkItem.classList.toggle('hidden', !isDir);
+    if (isDir && targetEntry) {
+      const label = document.getElementById('ctx-bookmark-label');
+      label.textContent = isBookmarked(targetEntry.path) ? 'Retirer des favoris' : 'Ajouter aux favoris';
+    }
 
     const x = Math.min(e.clientX, window.innerWidth - 240);
     const y = Math.min(e.clientY, window.innerHeight - 300);
@@ -64,6 +75,9 @@ function handleContextAction(action) {
       break;
     case 'open-terminal':
       invoke('open_terminal', { path: state.currentPath }).catch(e => showToast(e, 'error'));
+      break;
+    case 'toggle-bookmark':
+      if (state.contextTarget) toggleBookmark(state.contextTarget);
       break;
     case 'copy':
       clipboardCopy();

@@ -14,6 +14,7 @@ import { loadQuickAccess } from './modules/sidebar.js';
 import { refresh, goBack, goForward, goUp } from './modules/navigation.js';
 import { setupTabs, initTabs } from './modules/tabs.js';
 import { setupTitlebar } from './modules/titlebar.js';
+import { loadBookmarks } from './modules/bookmarks.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   // Titlebar
@@ -39,6 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupPreview();
   setupTabs();
   await loadQuickAccess();
+  loadBookmarks();
 
   // Restore UI state from prefs
   document.getElementById('btn-view-grid').classList.toggle('active', state.viewMode === 'grid');
