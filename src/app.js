@@ -16,6 +16,7 @@ import { setupTabs, initTabs } from './modules/tabs.js';
 import { setupTitlebar } from './modules/titlebar.js';
 import { loadBookmarks } from './modules/bookmarks.js';
 import { setupProperties } from './modules/properties.js';
+import { setupSidebarResize } from './modules/resize.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   // Titlebar
@@ -41,6 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupPreview();
   setupProperties();
   setupTabs();
+  setupSidebarResize();
   await loadQuickAccess();
   loadBookmarks();
 

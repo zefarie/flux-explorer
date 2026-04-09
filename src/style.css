@@ -553,6 +553,19 @@ body {
 .disk-bar-fill.usage-high   { background: var(--orange); }
 .disk-bar-fill.usage-crit   { background: var(--red); }
 
+/* Sidebar resize handle */
+#sidebar-resize {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+  transition: background var(--transition);
+}
+#sidebar-resize:hover,
+#sidebar-resize.active {
+  background: var(--yellow);
+}
+
 /* ============================================
    FILE AREA
    ============================================ */
