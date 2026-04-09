@@ -5,7 +5,9 @@ use image::imageops::FilterType;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::fs;
-use std::io::{BufRead, BufReader, Cursor};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::io::{BufRead, BufReader, Cursor, Write as IoWrite};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -500,20 +502,78 @@ fn search_recursive(
     }
 }
 
+fn thumb_cache_dir() -> PathBuf {
+    let home = dirs_home();
+    PathBuf::from(home).join(".cache").join("flux-explorer").join("thumbs")
+}
+
+fn thumb_cache_key(path: &str, size: u32, mtime: i64) -> String {
+    let mut hasher = DefaultHasher::new();
+    path.hash(&mut hasher);
+    size.hash(&mut hasher);
+    mtime.hash(&mut hasher);
+    format!("{:016x}.jpg", hasher.finish())
+}
+
+fn get_mtime(path: &str) -> i64 {
+    fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn read_cached_thumb(path: &str, size: u32) -> Option<String> {
+    let mtime = get_mtime(path);
+    let key = thumb_cache_key(path, size, mtime);
+    let cache_path = thumb_cache_dir().join(&key);
+    if cache_path.exists() {
+        let data = fs::read(&cache_path).ok()?;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
+        Some(format!("data:image/jpeg;base64,{}", b64))
+    } else {
+        None
+    }
+}
+
+fn write_cached_thumb(path: &str, size: u32, jpeg_data: &[u8]) {
+    let mtime = get_mtime(path);
+    let key = thumb_cache_key(path, size, mtime);
+    let cache_dir = thumb_cache_dir();
+    let _ = fs::create_dir_all(&cache_dir);
+    let cache_path = cache_dir.join(&key);
+    if let Ok(mut f) = fs::File::create(&cache_path) {
+        let _ = f.write_all(jpeg_data);
+    }
+}
+
 #[tauri::command]
 fn get_thumbnail(path: String, size: u32) -> Result<String, String> {
+    if let Some(cached) = read_cached_thumb(&path, size) {
+        return Ok(cached);
+    }
+
     let img = image::open(&path).map_err(|e| format!("Cannot open image: {}", e))?;
     let thumb = img.resize(size, size, FilterType::Triangle);
     let mut buf = Cursor::new(Vec::new());
     thumb
         .write_to(&mut buf, image::ImageFormat::Jpeg)
         .map_err(|e| format!("Cannot encode thumbnail: {}", e))?;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(buf.into_inner());
+    let jpeg_data = buf.into_inner();
+
+    write_cached_thumb(&path, size, &jpeg_data);
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&jpeg_data);
     Ok(format!("data:image/jpeg;base64,{}", b64))
 }
 
 #[tauri::command]
 fn get_video_thumbnail(path: String, size: u32) -> Result<String, String> {
+    if let Some(cached) = read_cached_thumb(&path, size) {
+        return Ok(cached);
+    }
+
     let output = Command::new("ffmpeg")
         .args([
             "-ss", "1",
@@ -531,6 +591,8 @@ fn get_video_thumbnail(path: String, size: u32) -> Result<String, String> {
     if !output.status.success() {
         return Err("ffmpeg failed".to_string());
     }
+
+    write_cached_thumb(&path, size, &output.stdout);
 
     let b64 = base64::engine::general_purpose::STANDARD.encode(&output.stdout);
     Ok(format!("data:image/jpeg;base64,{}", b64))
