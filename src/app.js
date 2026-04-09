@@ -1026,6 +1026,27 @@ function setupKeyboard() {
       return;
     }
 
+    // Arrow keys — Navigate between items
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && !e.altKey && !e.ctrlKey) {
+      e.preventDefault();
+      navigateByArrow(e.key, e.shiftKey);
+      return;
+    }
+
+    // Home / End — Jump to first/last item
+    if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      const sorted = sortEntries(state.entries);
+      if (sorted.length === 0) return;
+      const target = e.key === 'Home' ? sorted[0] : sorted[sorted.length - 1];
+      state.selected.clear();
+      state.selected.add(target.path);
+      state.lastSelected = e.key === 'Home' ? 0 : sorted.length - 1;
+      updateSelection();
+      scrollToSelected();
+      return;
+    }
+
     // Space — Preview
     if (e.key === ' ' && state.selected.size === 1) {
       e.preventDefault();
@@ -1054,6 +1075,80 @@ function setupKeyboard() {
       return;
     }
   });
+}
+
+function navigateByArrow(key, shiftKey) {
+  const sorted = sortEntries(state.entries);
+  if (sorted.length === 0) return;
+
+  const items = document.querySelectorAll('.file-item');
+  let currentIndex = state.lastSelected ?? -1;
+
+  // If nothing selected, start from first
+  if (currentIndex < 0 || currentIndex >= sorted.length) {
+    currentIndex = 0;
+    state.selected.clear();
+    state.selected.add(sorted[0].path);
+    state.lastSelected = 0;
+    updateSelection();
+    scrollToSelected();
+    return;
+  }
+
+  let step = 0;
+  if (state.viewMode === 'grid') {
+    const cols = getGridColumns();
+    switch (key) {
+      case 'ArrowRight': step = 1; break;
+      case 'ArrowLeft':  step = -1; break;
+      case 'ArrowDown':  step = cols; break;
+      case 'ArrowUp':    step = -cols; break;
+    }
+  } else {
+    switch (key) {
+      case 'ArrowDown':  step = 1; break;
+      case 'ArrowUp':    step = -1; break;
+      case 'ArrowRight': step = 1; break;
+      case 'ArrowLeft':  step = -1; break;
+    }
+  }
+
+  const newIndex = Math.max(0, Math.min(sorted.length - 1, currentIndex + step));
+  if (newIndex === currentIndex) return;
+
+  if (shiftKey) {
+    // Extend selection
+    const start = Math.min(state.lastSelected, newIndex);
+    const end = Math.max(state.lastSelected, newIndex);
+    // Keep existing anchor, add range
+    for (let i = start; i <= end; i++) {
+      state.selected.add(sorted[i].path);
+    }
+  } else {
+    state.selected.clear();
+    state.selected.add(sorted[newIndex].path);
+  }
+
+  state.lastSelected = newIndex;
+  updateSelection();
+  scrollToSelected();
+}
+
+function getGridColumns() {
+  const container = document.getElementById('file-container');
+  if (!container || !container.children.length) return 1;
+  const first = container.querySelector('.file-item');
+  if (!first) return 1;
+  const containerWidth = container.clientWidth;
+  const itemWidth = first.offsetWidth + 8; // gap
+  return Math.max(1, Math.floor(containerWidth / itemWidth));
+}
+
+function scrollToSelected() {
+  const selected = document.querySelector('.file-item.selected');
+  if (selected) {
+    selected.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
 }
 
 // ============================================
