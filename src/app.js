@@ -12,6 +12,7 @@ import { setupDialogs } from './modules/dialogs.js';
 import { setupPreview } from './modules/preview.js';
 import { loadQuickAccess } from './modules/sidebar.js';
 import { refresh, goBack, goForward, goUp } from './modules/navigation.js';
+import { setupTabs, initTabs } from './modules/tabs.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   // Toolbar buttons
@@ -32,6 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupContextMenu();
   setupDialogs();
   setupPreview();
+  setupTabs();
   await loadQuickAccess();
 
   // Restore UI state from prefs
@@ -42,8 +44,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Auto-refresh when filesystem changes
   listen('fs-changed', () => refresh());
 
-  // Navigate to last path or home
+  // Initialize first tab and navigate
   const home = await invoke('get_home');
   const startPath = savedPrefs.lastPath || home;
+  await initTabs(startPath);
   await navigateTo(startPath);
 });

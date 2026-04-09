@@ -6,10 +6,26 @@ import { clipboardCopy, clipboardCut, clipboardPaste } from './clipboard.js';
 import { showRenameDialog, showNewFolderDialog, showDeleteDialog } from './dialogs.js';
 import { openPreview, closePreview } from './preview.js';
 import { performSearch } from './search.js';
+import { createTab, closeTab, getActiveTab, getTabCount } from './tabs.js';
 
 export function setupKeyboard() {
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT') return;
+
+    // Ctrl+T -- New tab
+    if (e.ctrlKey && e.key === 't') {
+      e.preventDefault();
+      createTab();
+      return;
+    }
+
+    // Ctrl+W -- Close tab
+    if (e.ctrlKey && e.key === 'w') {
+      e.preventDefault();
+      const tab = getActiveTab();
+      if (tab && getTabCount() > 1) closeTab(tab.id);
+      return;
+    }
 
     if (e.ctrlKey && e.key === 'l') {
       e.preventDefault();

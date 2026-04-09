@@ -3,6 +3,7 @@ import { showLoading, showToast, escapeHtml, escapeAttr } from './utils.js';
 import { renderEntries } from './files.js';
 import { updateSidebar } from './sidebar.js';
 import { updateStatusBar } from './statusbar.js';
+import { updateActiveTabName } from './tabs.js';
 
 export async function navigateTo(path, addToHistory = true) {
   showLoading(true);
@@ -27,6 +28,7 @@ export async function navigateTo(path, addToHistory = true) {
     updateSidebar();
     updateStatusBar();
     savePrefs();
+    updateActiveTabName();
     invoke('watch_directory', { path }).catch(() => {});
   } catch (err) {
     showToast(err, 'error');
