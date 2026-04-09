@@ -5,6 +5,33 @@
 const { invoke } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
 
+// Preferences persistence
+const PREFS_KEY = 'flux-explorer-prefs';
+
+function loadPrefs() {
+  try {
+    const saved = localStorage.getItem(PREFS_KEY);
+    return saved ? JSON.parse(saved) : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function savePrefs() {
+  const prefs = {
+    viewMode: state.viewMode,
+    showHidden: state.showHidden,
+    sortBy: state.sortBy,
+    sortAsc: state.sortAsc,
+    lastPath: state.currentPath,
+  };
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch (_) {}
+}
+
+const savedPrefs = loadPrefs();
+
 // State
 const state = {
   currentPath: '',
@@ -13,10 +40,10 @@ const state = {
   lastSelected: null,
   history: [],
   historyIndex: -1,
-  viewMode: 'grid',
-  showHidden: false,
-  sortBy: 'name',
-  sortAsc: true,
+  viewMode: savedPrefs.viewMode || 'grid',
+  showHidden: savedPrefs.showHidden || false,
+  sortBy: savedPrefs.sortBy || 'name',
+  sortAsc: savedPrefs.sortAsc !== undefined ? savedPrefs.sortAsc : true,
   searchQuery: '',
   contextTarget: null,
   clipboard: { paths: [], action: null }, // action: 'copy' | 'cut'
@@ -38,8 +65,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupPreview();
   await loadQuickAccess();
 
+  // Restore UI state from prefs
+  document.getElementById('btn-view-grid').classList.toggle('active', state.viewMode === 'grid');
+  document.getElementById('btn-view-list').classList.toggle('active', state.viewMode === 'list');
+  document.getElementById('btn-hidden').classList.toggle('active', state.showHidden);
+
   const home = await invoke('get_home');
-  await navigateTo(home);
+  const startPath = savedPrefs.lastPath || home;
+  await navigateTo(startPath);
 });
 
 // ============================================
@@ -105,6 +138,7 @@ async function navigateTo(path, addToHistory = true) {
     updateNavButtons();
     updateSidebar();
     updateStatusBar();
+    savePrefs();
   } catch (err) {
     showToast(err, 'error');
   }
@@ -455,6 +489,7 @@ function renderEntries() {
           state.sortAsc = true;
         }
         renderEntries();
+        savePrefs();
       }
     });
   }
@@ -571,11 +606,13 @@ function setViewMode(mode) {
   document.getElementById('btn-view-grid').classList.toggle('active', mode === 'grid');
   document.getElementById('btn-view-list').classList.toggle('active', mode === 'list');
   renderEntries();
+  savePrefs();
 }
 
 function toggleHidden() {
   state.showHidden = !state.showHidden;
   document.getElementById('btn-hidden').classList.toggle('active', state.showHidden);
+  savePrefs();
   navigateTo(state.currentPath, false);
 }
 
