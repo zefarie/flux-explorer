@@ -662,6 +662,25 @@ function updateSidebar() {
   document.querySelectorAll('.sidebar-item').forEach(item => {
     item.classList.toggle('active', item.dataset.path === state.currentPath);
   });
+  loadDiskInfo();
+}
+
+async function loadDiskInfo() {
+  const container = document.getElementById('disk-info');
+  if (!container) return;
+  try {
+    const info = await invoke('get_disk_info', { path: '/' });
+    const pct = Math.round((info.used / info.total) * 100);
+    const usageClass = pct >= 90 ? 'usage-crit' : pct >= 75 ? 'usage-high' : pct >= 50 ? 'usage-mid' : 'usage-low';
+    container.innerHTML = `
+      <span>${formatSize(info.used)} / ${formatSize(info.total)} (${pct}%)</span>
+      <div class="disk-bar">
+        <div class="disk-bar-fill ${usageClass}" style="width: ${pct}%"></div>
+      </div>
+    `;
+  } catch (_) {
+    container.innerHTML = '';
+  }
 }
 
 // ============================================

@@ -368,6 +368,29 @@ body {
   opacity: 1;
 }
 
+/* Disk usage */
+.disk-info {
+  padding: 6px 16px;
+  font-size: 10.5px;
+  color: var(--fg4);
+}
+.disk-bar {
+  height: 4px;
+  background: var(--bg2);
+  border-radius: 2px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+.disk-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 300ms ease;
+}
+.disk-bar-fill.usage-low    { background: var(--green); }
+.disk-bar-fill.usage-mid    { background: var(--yellow); }
+.disk-bar-fill.usage-high   { background: var(--orange); }
+.disk-bar-fill.usage-crit   { background: var(--red); }
+
 /* ============================================
    FILE AREA
    ============================================ */

@@ -550,6 +550,22 @@ fn dirs_home() -> String {
 }
 
 #[tauri::command]
+fn get_disk_info(path: String) -> Result<DiskInfo, String> {
+    use std::mem::MaybeUninit;
+    let c_path = std::ffi::CString::new(path).map_err(|e| e.to_string())?;
+    let mut stat = MaybeUninit::<libc::statvfs>::uninit();
+    let ret = unsafe { libc::statvfs(c_path.as_ptr(), stat.as_mut_ptr()) };
+    if ret != 0 {
+        return Err("Cannot get disk info".to_string());
+    }
+    let stat = unsafe { stat.assume_init() };
+    let total = stat.f_blocks * stat.f_frsize;
+    let available = stat.f_bavail * stat.f_frsize;
+    let used = total - available;
+    Ok(DiskInfo { total, available, used })
+}
+
+#[tauri::command]
 fn watch_directory(path: String, app: AppHandle) -> Result<(), String> {
     let watcher_state = app.state::<Mutex<WatcherState>>();
     let mut state = watcher_state.lock().map_err(|e| e.to_string())?;
@@ -611,6 +627,7 @@ fn main() {
             get_thumbnail,
             get_video_thumbnail,
             watch_directory,
+            get_disk_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Flux Explorer");
