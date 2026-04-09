@@ -1159,6 +1159,25 @@ body {
   tab-size: 4;
 }
 
+/* Media preview */
+.preview-media {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius);
+  outline: none;
+}
+.preview-audio-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+.preview-audio {
+  width: 400px;
+  max-width: 100%;
+  outline: none;
+}
+
 /* Syntax highlighting */
 .hl-keyword { color: var(--red); font-weight: 600; }
 .hl-string  { color: var(--green); }
