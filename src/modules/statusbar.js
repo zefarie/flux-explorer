@@ -3,7 +3,7 @@ import { formatSize } from './utils.js';
 
 export function updateStatusBar(count) {
   const total = count ?? state.entries.length;
-  document.getElementById('status-count').textContent = `${total} element${total !== 1 ? 's' : ''}`;
+  document.getElementById('status-count').textContent = `${total} \u00e9l\u00e9ment${total !== 1 ? 's' : ''}`;
 
   const selCount = state.selected.size;
   const selEl = document.getElementById('status-selected');
@@ -13,7 +13,7 @@ export function updateStatusBar(count) {
       const entry = state.entries.find(e => e.path === path);
       return acc + (entry?.size || 0);
     }, 0);
-    let selText = `${selCount} selectionne${selCount > 1 ? 's' : ''}`;
+    let selText = `${selCount} s\u00e9lectionn\u00e9${selCount > 1 ? 's' : ''}`;
     if (totalSize > 0) selText += ` - ${formatSize(totalSize)}`;
     if (selCount === 1) {
       const entry = state.entries.find(e => e.path === selPaths[0]);

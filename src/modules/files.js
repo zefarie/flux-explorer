@@ -58,7 +58,7 @@ export function renderEntries() {
       <span data-sort="name" class="${state.sortBy === 'name' ? 'sort-active' : ''}">Nom ${state.sortBy === 'name' ? (state.sortAsc ? '\u2191' : '\u2193') : ''}</span>
       <span data-sort="type" class="${state.sortBy === 'type' ? 'sort-active' : ''}">Type ${state.sortBy === 'type' ? (state.sortAsc ? '\u2191' : '\u2193') : ''}</span>
       <span data-sort="size" class="${state.sortBy === 'size' ? 'sort-active' : ''}" style="text-align:right">Taille ${state.sortBy === 'size' ? (state.sortAsc ? '\u2191' : '\u2193') : ''}</span>
-      <span data-sort="modified" class="${state.sortBy === 'modified' ? 'sort-active' : ''}">Modifie ${state.sortBy === 'modified' ? (state.sortAsc ? '\u2191' : '\u2193') : ''}</span>
+      <span data-sort="modified" class="${state.sortBy === 'modified' ? 'sort-active' : ''}">Modifi\u00e9 ${state.sortBy === 'modified' ? (state.sortAsc ? '\u2191' : '\u2193') : ''}</span>
     </div>`;
   }
 

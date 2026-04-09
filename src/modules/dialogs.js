@@ -122,7 +122,7 @@ export function showDeleteDialog() {
 
   const msg = paths.length === 1
     ? `Supprimer "${names[0]}" ?`
-    : `Supprimer ${paths.length} elements ?`;
+    : `Supprimer ${paths.length} \u00e9l\u00e9ments ?`;
 
   document.getElementById('delete-message').textContent = msg;
   document.getElementById('delete-overlay').classList.remove('hidden');
@@ -136,7 +136,7 @@ async function confirmDelete() {
   try {
     await invoke('delete_items', { paths });
     hideDialog('delete');
-    showToast(`${paths.length} element${paths.length > 1 ? 's' : ''} supprime${paths.length > 1 ? 's' : ''}`, 'success');
+    showToast(`${paths.length} \u00e9l\u00e9ment${paths.length > 1 ? 's' : ''} supprim\u00e9${paths.length > 1 ? 's' : ''}`, 'success');
     await refresh();
   } catch (err) {
     showToast(err, 'error');

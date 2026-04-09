@@ -80,7 +80,7 @@ function showPreviewInfo(content, entry) {
       <table>
         <tr><td>Nom</td><td>${escapeHtml(entry.name)}</td></tr>
         <tr><td>Taille</td><td>${formatSize(entry.size)}</td></tr>
-        <tr><td>Modifie</td><td>${formatDate(entry.modified)}</td></tr>
+        <tr><td>Modifi\u00e9</td><td>${formatDate(entry.modified)}</td></tr>
         <tr><td>Permissions</td><td>${entry.permissions || '-'}</td></tr>
         ${entry.is_symlink ? '<tr><td>Type</td><td>Lien symbolique</td></tr>' : ''}
       </table>

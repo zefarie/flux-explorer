@@ -142,10 +142,10 @@ fn get_quick_access() -> Vec<QuickAccess> {
         ("Accueil", &home, "home"),
         ("Bureau", &desktop, "desktop"),
         ("Documents", &documents, "documents"),
-        ("Telechargements", dl_path, "downloads"),
+        ("T\u{00e9}l\u{00e9}chargements", dl_path, "downloads"),
         ("Images", &pictures, "images"),
         ("Musique", &music, "music"),
-        ("Videos", &videos, "videos"),
+        ("Vid\u{00e9}os", &videos, "videos"),
         ("Prism Launcher", &prism, "gaming"),
     ];
 

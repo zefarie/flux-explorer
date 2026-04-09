@@ -79,10 +79,10 @@ export function setupDragDrop() {
     try {
       if (e.ctrlKey) {
         await invoke('copy_items', { sources: dragPaths, destination: dest });
-        showToast(`${dragPaths.length} element${dragPaths.length > 1 ? 's' : ''} copie${dragPaths.length > 1 ? 's' : ''}`, 'success');
+        showToast(`${dragPaths.length} \u00e9l\u00e9ment${dragPaths.length > 1 ? 's' : ''} copi\u00e9${dragPaths.length > 1 ? 's' : ''}`, 'success');
       } else {
         await invoke('move_items', { sources: dragPaths, destination: dest });
-        showToast(`${dragPaths.length} element${dragPaths.length > 1 ? 's' : ''} deplace${dragPaths.length > 1 ? 's' : ''}`, 'success');
+        showToast(`${dragPaths.length} \u00e9l\u00e9ment${dragPaths.length > 1 ? 's' : ''} d\u00e9plac\u00e9${dragPaths.length > 1 ? 's' : ''}`, 'success');
       }
       await refresh();
     } catch (err) {

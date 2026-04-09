@@ -19,7 +19,7 @@ export async function showProperties(path) {
   try {
     const props = await invoke('get_file_properties', { path });
 
-    title.textContent = `Proprietes - ${props.name}`;
+    title.textContent = `Propri\u00e9t\u00e9s - ${props.name}`;
 
     let rows = `
       <tr><td>Nom</td><td>${escapeHtml(props.name)}</td></tr>
@@ -34,11 +34,11 @@ export async function showProperties(path) {
 
     rows += `
       <tr><td>Permissions</td><td>${props.permissions}</td></tr>
-      <tr><td>Proprietaire</td><td>${escapeHtml(props.owner)}</td></tr>
+      <tr><td>Propri\u00e9taire</td><td>${escapeHtml(props.owner)}</td></tr>
       <tr><td>Groupe</td><td>${escapeHtml(props.group)}</td></tr>
-      <tr><td>Modifie</td><td>${formatDate(props.modified)}</td></tr>
-      <tr><td>Accede</td><td>${formatDate(props.accessed)}</td></tr>
-      <tr><td>Cree</td><td>${formatDate(props.created)}</td></tr>
+      <tr><td>Modifi\u00e9</td><td>${formatDate(props.modified)}</td></tr>
+      <tr><td>Acc\u00e9d\u00e9</td><td>${formatDate(props.accessed)}</td></tr>
+      <tr><td>Cr\u00e9\u00e9</td><td>${formatDate(props.created)}</td></tr>
     `;
 
     content.innerHTML = `<table>${rows}</table>`;
