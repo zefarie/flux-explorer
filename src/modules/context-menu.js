@@ -5,6 +5,7 @@ import { navigateTo } from './navigation.js';
 import { clipboardCopy, clipboardCut, clipboardPaste } from './clipboard.js';
 import { showRenameDialog, showNewFolderDialog, showNewFileDialog, showDeleteDialog } from './dialogs.js';
 import { toggleBookmark, isBookmarked } from './bookmarks.js';
+import { showProperties } from './properties.js';
 
 export function setupContextMenu() {
   const menu = document.getElementById('context-menu');
@@ -44,6 +45,7 @@ export function setupContextMenu() {
       const label = document.getElementById('ctx-bookmark-label');
       label.textContent = isBookmarked(targetEntry.path) ? 'Retirer des favoris' : 'Ajouter aux favoris';
     }
+    menu.querySelector('[data-action="properties"]').classList.toggle('hidden', !hasTarget);
 
     const x = Math.min(e.clientX, window.innerWidth - 240);
     const y = Math.min(e.clientY, window.innerHeight - 300);
@@ -99,6 +101,9 @@ function handleContextAction(action) {
       break;
     case 'delete':
       showDeleteDialog();
+      break;
+    case 'properties':
+      if (state.contextTarget) showProperties(state.contextTarget);
       break;
   }
 }

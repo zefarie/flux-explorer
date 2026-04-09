@@ -15,6 +15,7 @@ import { refresh, goBack, goForward, goUp } from './modules/navigation.js';
 import { setupTabs, initTabs } from './modules/tabs.js';
 import { setupTitlebar } from './modules/titlebar.js';
 import { loadBookmarks } from './modules/bookmarks.js';
+import { setupProperties } from './modules/properties.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   // Titlebar
@@ -38,6 +39,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupContextMenu();
   setupDialogs();
   setupPreview();
+  setupProperties();
   setupTabs();
   await loadQuickAccess();
   loadBookmarks();

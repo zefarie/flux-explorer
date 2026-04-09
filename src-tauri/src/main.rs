@@ -598,6 +598,185 @@ fn get_video_thumbnail(path: String, size: u32) -> Result<String, String> {
     Ok(format!("data:image/jpeg;base64,{}", b64))
 }
 
+#[derive(Serialize)]
+struct FileProperties {
+    name: String,
+    path: String,
+    is_dir: bool,
+    is_symlink: bool,
+    size: u64,
+    permissions: String,
+    owner: String,
+    group: String,
+    created: i64,
+    modified: i64,
+    accessed: i64,
+    mime_type: String,
+    file_count: Option<u64>,
+    dir_count: Option<u64>,
+}
+
+#[tauri::command]
+fn get_file_properties(path: String) -> Result<FileProperties, String> {
+    let p = Path::new(&path);
+    let metadata = fs::symlink_metadata(p).map_err(|e| format!("Cannot read metadata: {}", e))?;
+    let real_metadata = if metadata.is_symlink() {
+        fs::metadata(p).unwrap_or(metadata.clone())
+    } else {
+        metadata.clone()
+    };
+
+    let is_dir = real_metadata.is_dir();
+    let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.clone());
+
+    // Owner/group via libc
+    use std::os::unix::fs::MetadataExt;
+    let uid = metadata.uid();
+    let gid = metadata.gid();
+
+    let owner = unsafe {
+        let pw = libc::getpwuid(uid);
+        if pw.is_null() {
+            uid.to_string()
+        } else {
+            std::ffi::CStr::from_ptr((*pw).pw_name).to_string_lossy().to_string()
+        }
+    };
+
+    let group = unsafe {
+        let gr = libc::getgrgid(gid);
+        if gr.is_null() {
+            gid.to_string()
+        } else {
+            std::ffi::CStr::from_ptr((*gr).gr_name).to_string_lossy().to_string()
+        }
+    };
+
+    let to_timestamp = |t: std::io::Result<std::time::SystemTime>| -> i64 {
+        t.ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0)
+    };
+
+    let created = to_timestamp(metadata.created());
+    let modified = to_timestamp(metadata.modified());
+    let accessed = to_timestamp(metadata.accessed());
+
+    let permissions = format_permissions(metadata.permissions().mode());
+
+    // Size: recursive for directories
+    let size = if is_dir {
+        dir_size(p)
+    } else {
+        real_metadata.len()
+    };
+
+    // MIME type from extension
+    let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let mime_type = guess_mime(&ext, is_dir);
+
+    // File/dir count for directories
+    let (file_count, dir_count) = if is_dir {
+        let (f, d) = count_contents(p);
+        (Some(f), Some(d))
+    } else {
+        (None, None)
+    };
+
+    Ok(FileProperties {
+        name,
+        path,
+        is_dir,
+        is_symlink: metadata.is_symlink(),
+        size,
+        permissions,
+        owner,
+        group,
+        created,
+        modified,
+        accessed,
+        mime_type,
+        file_count,
+        dir_count,
+    })
+}
+
+fn dir_size(path: &Path) -> u64 {
+    let mut total = 0u64;
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let meta = match fs::symlink_metadata(&p) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            if meta.is_dir() && !meta.is_symlink() {
+                total += dir_size(&p);
+            } else {
+                total += meta.len();
+            }
+        }
+    }
+    total
+}
+
+fn count_contents(path: &Path) -> (u64, u64) {
+    let mut files = 0u64;
+    let mut dirs = 0u64;
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let meta = match fs::symlink_metadata(entry.path()) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            if meta.is_dir() {
+                dirs += 1;
+            } else {
+                files += 1;
+            }
+        }
+    }
+    (files, dirs)
+}
+
+fn guess_mime(ext: &str, is_dir: bool) -> String {
+    if is_dir { return "inode/directory".to_string(); }
+    match ext {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "mp4" => "video/mp4",
+        "mkv" => "video/x-matroska",
+        "avi" => "video/x-msvideo",
+        "mov" => "video/quicktime",
+        "webm" => "video/webm",
+        "mp3" => "audio/mpeg",
+        "flac" => "audio/flac",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "pdf" => "application/pdf",
+        "zip" => "application/zip",
+        "tar" => "application/x-tar",
+        "gz" => "application/gzip",
+        "js" => "text/javascript",
+        "ts" => "text/typescript",
+        "json" => "application/json",
+        "html" => "text/html",
+        "css" => "text/css",
+        "py" => "text/x-python",
+        "rs" => "text/x-rust",
+        "go" => "text/x-go",
+        "txt" | "md" | "log" | "cfg" | "conf" | "ini" => "text/plain",
+        "sh" | "bash" | "zsh" => "text/x-shellscript",
+        _ => "application/octet-stream",
+    }.to_string()
+}
+
 fn format_permissions(mode: u32) -> String {
     let flags = [
         (0o400, 'r'), (0o200, 'w'), (0o100, 'x'),
@@ -690,6 +869,7 @@ fn main() {
             get_video_thumbnail,
             watch_directory,
             get_disk_info,
+            get_file_properties,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Flux Explorer");
