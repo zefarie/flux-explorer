@@ -2,9 +2,30 @@ import { state, invoke, savePrefs } from './state.js';
 import { navigateTo } from './navigation.js';
 import { escapeHtml } from './utils.js';
 
+const SESSION_KEY = 'flux-explorer-session';
+
 let tabs = [];
 let activeTabId = null;
 let tabIdCounter = 0;
+
+function persistSession() {
+  try {
+    const data = {
+      tabs: tabs.map(t => ({ path: t.currentPath })),
+      activeIndex: tabs.findIndex(t => t.id === activeTabId),
+    };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+  } catch (_) {}
+}
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
 
 function createTabState(path) {
   return {
@@ -56,6 +77,7 @@ export async function createTab(path) {
 
   renderTabs();
   await navigateTo(home);
+  persistSession();
 }
 
 export async function closeTab(tabId) {
@@ -76,6 +98,7 @@ export async function closeTab(tabId) {
   } else {
     renderTabs();
   }
+  persistSession();
 }
 
 export async function switchTab(tabId) {
@@ -122,6 +145,7 @@ export function updateActiveTabName() {
     const name = state.currentPath.split('/').filter(Boolean).pop() || '/';
     tabEl.textContent = name;
   }
+  persistSession();
 }
 
 export function setupTabs() {
@@ -160,10 +184,20 @@ export function getTabCount() {
   return tabs.length;
 }
 
-// Initialize first tab
+// Initialize first tab (or restore session if available)
 export async function initTabs(startPath) {
-  const tab = createTabState(startPath);
-  tabs.push(tab);
-  activeTabId = tab.id;
+  const session = loadSession();
+  if (session && session.tabs && session.tabs.length > 0) {
+    for (const t of session.tabs) {
+      tabs.push(createTabState(t.path));
+    }
+    const idx = Math.max(0, Math.min(session.activeIndex || 0, tabs.length - 1));
+    activeTabId = tabs[idx].id;
+  } else {
+    const tab = createTabState(startPath);
+    tabs.push(tab);
+    activeTabId = tab.id;
+  }
   renderTabs();
+  return getActiveTab().currentPath;
 }
