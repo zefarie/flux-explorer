@@ -2,7 +2,8 @@
 
 use base64::Engine;
 use image::imageops::FilterType;
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use notify::RecursiveMode;
+use notify_debouncer_mini::{new_debouncer, Debouncer, notify::RecommendedWatcher};
 use serde::Serialize;
 use std::fs;
 use std::collections::hash_map::DefaultHasher;
@@ -43,12 +44,18 @@ struct QuickAccess {
 }
 
 struct WatcherState {
-    watcher: Option<RecommendedWatcher>,
+    watcher: Option<Debouncer<RecommendedWatcher>>,
     watched_path: Option<String>,
 }
 
 #[tauri::command]
-fn list_directory(path: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
+async fn list_directory(path: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
+    tokio::task::spawn_blocking(move || list_directory_sync(path, show_hidden))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn list_directory_sync(path: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
     let dir_path = Path::new(&path);
     if !dir_path.exists() {
         return Err(format!("Path does not exist: {}", path));
@@ -568,22 +575,26 @@ fn search_recursive(
 }
 
 fn file_contains(path: &Path, query: &str) -> bool {
-    let file = match fs::File::open(path) {
+    use std::io::Read;
+    // Read up to 256 KB in one go - faster than line-by-line for short files
+    let mut file = match fs::File::open(path) {
         Ok(f) => f,
         Err(_) => return false,
     };
-    let reader = BufReader::new(file);
-    for line in reader.lines().take(500) {
-        match line {
-            Ok(l) => {
-                if l.to_lowercase().contains(query) {
-                    return true;
-                }
-            }
-            Err(_) => return false, // binary file
-        }
+    let mut buf = Vec::with_capacity(64 * 1024);
+    let cap = 256 * 1024;
+    if (&mut file).take(cap as u64).read_to_end(&mut buf).is_err() {
+        return false;
     }
-    false
+    // Reject likely binary content (NUL bytes)
+    if buf.contains(&0) {
+        return false;
+    }
+    // Convert to lowercase string lazily
+    match std::str::from_utf8(&buf) {
+        Ok(s) => s.to_lowercase().contains(query),
+        Err(_) => false,
+    }
 }
 
 fn thumb_cache_dir() -> PathBuf {
@@ -815,23 +826,39 @@ fn get_file_properties_sync(path: String) -> Result<FileProperties, String> {
     })
 }
 
+const DIR_SIZE_MAX_DEPTH: usize = 12;
+const DIR_SIZE_MAX_ENTRIES: u64 = 50_000;
+
 fn dir_size(path: &Path) -> u64 {
     let mut total = 0u64;
+    let mut visited = 0u64;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    dir_size_recursive(path, &mut total, &mut visited, 0, deadline);
+    total
+}
+
+fn dir_size_recursive(path: &Path, total: &mut u64, visited: &mut u64, depth: usize, deadline: Instant) {
+    if depth > DIR_SIZE_MAX_DEPTH || *visited >= DIR_SIZE_MAX_ENTRIES || Instant::now() > deadline {
+        return;
+    }
     if let Ok(entries) = fs::read_dir(path) {
         for entry in entries.flatten() {
+            *visited += 1;
+            if *visited >= DIR_SIZE_MAX_ENTRIES || Instant::now() > deadline {
+                return;
+            }
             let p = entry.path();
             let meta = match fs::symlink_metadata(&p) {
                 Ok(m) => m,
                 Err(_) => continue,
             };
             if meta.is_dir() && !meta.is_symlink() {
-                total += dir_size(&p);
+                dir_size_recursive(&p, total, visited, depth + 1, deadline);
             } else {
-                total += meta.len();
+                *total += meta.len();
             }
         }
     }
-    total
 }
 
 fn count_contents(path: &Path) -> (u64, u64) {
@@ -890,13 +917,14 @@ fn guess_mime(ext: &str, is_dir: bool) -> String {
     }.to_string()
 }
 
+const PERM_FLAGS: &[(u32, char)] = &[
+    (0o400, 'r'), (0o200, 'w'), (0o100, 'x'),
+    (0o040, 'r'), (0o020, 'w'), (0o010, 'x'),
+    (0o004, 'r'), (0o002, 'w'), (0o001, 'x'),
+];
+
 fn format_permissions(mode: u32) -> String {
-    let flags = [
-        (0o400, 'r'), (0o200, 'w'), (0o100, 'x'),
-        (0o040, 'r'), (0o020, 'w'), (0o010, 'x'),
-        (0o004, 'r'), (0o002, 'w'), (0o001, 'x'),
-    ];
-    flags.iter().map(|(bit, ch)| if mode & bit != 0 { *ch } else { '-' }).collect()
+    PERM_FLAGS.iter().map(|(bit, ch)| if mode & bit != 0 { *ch } else { '-' }).collect()
 }
 
 fn dirs_home() -> String {
@@ -934,23 +962,21 @@ fn watch_directory(path: String, app: AppHandle) -> Result<(), String> {
     state.watched_path = None;
 
     let app_handle = app.clone();
-    let last_emit = std::sync::Arc::new(Mutex::new(Instant::now() - Duration::from_secs(1)));
-
-    let debounce = last_emit.clone();
-    let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
-        if res.is_ok() {
-            let mut last = debounce.lock().unwrap();
-            if last.elapsed() >= Duration::from_millis(300) {
-                *last = Instant::now();
+    let mut debouncer = new_debouncer(
+        Duration::from_millis(300),
+        move |res: notify_debouncer_mini::DebounceEventResult| {
+            if res.is_ok() {
                 let _ = app_handle.emit("fs-changed", ());
             }
-        }
-    }).map_err(|e| format!("Cannot create watcher: {}", e))?;
+        },
+    ).map_err(|e| format!("Cannot create watcher: {}", e))?;
 
-    watcher.watch(Path::new(&path), RecursiveMode::NonRecursive)
+    debouncer
+        .watcher()
+        .watch(Path::new(&path), RecursiveMode::NonRecursive)
         .map_err(|e| format!("Cannot watch directory: {}", e))?;
 
-    state.watcher = Some(watcher);
+    state.watcher = Some(debouncer);
     state.watched_path = Some(path);
     Ok(())
 }
