@@ -1820,6 +1820,167 @@ fn get_git_status(path: String) -> Result<GitStatus, String> {
     Ok(GitStatus { is_repo: true, branch, statuses })
 }
 
+#[derive(Serialize)]
+struct DuplicateGroup {
+    hash: String,
+    size: u64,
+    paths: Vec<String>,
+}
+
+#[tauri::command]
+async fn find_duplicates(path: String) -> Result<Vec<DuplicateGroup>, String> {
+    tokio::task::spawn_blocking(move || {
+        use sha2::{Sha256, Digest};
+        use std::collections::HashMap;
+        use std::io::Read;
+
+        // Step 1: collect all files with their sizes
+        let mut by_size: HashMap<u64, Vec<PathBuf>> = HashMap::new();
+        let mut stack = vec![PathBuf::from(&path)];
+        let mut visited = 0usize;
+        const MAX_FILES: usize = 200_000;
+
+        while let Some(dir) = stack.pop() {
+            let entries = match fs::read_dir(&dir) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            for entry in entries.flatten() {
+                if visited >= MAX_FILES { break; }
+                let p = entry.path();
+                let meta = match entry.metadata() {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
+                if meta.file_type().is_symlink() { continue; }
+                if meta.is_dir() {
+                    stack.push(p);
+                } else if meta.is_file() {
+                    let size = meta.len();
+                    if size > 0 {
+                        by_size.entry(size).or_default().push(p);
+                        visited += 1;
+                    }
+                }
+            }
+        }
+
+        // Step 2: for sizes with >1 file, hash them
+        let mut groups: Vec<DuplicateGroup> = Vec::new();
+        for (size, paths) in by_size {
+            if paths.len() < 2 { continue; }
+
+            let mut by_hash: HashMap<String, Vec<String>> = HashMap::new();
+            for p in &paths {
+                let mut file = match fs::File::open(p) {
+                    Ok(f) => f,
+                    Err(_) => continue,
+                };
+                let mut hasher = Sha256::new();
+                let mut buf = vec![0u8; 64 * 1024];
+                let mut ok = true;
+                loop {
+                    match file.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => hasher.update(&buf[..n]),
+                        Err(_) => { ok = false; break; }
+                    }
+                }
+                if !ok { continue; }
+                let hash = format!("{:x}", hasher.finalize());
+                by_hash.entry(hash).or_default().push(p.to_string_lossy().to_string());
+            }
+
+            for (hash, dup_paths) in by_hash {
+                if dup_paths.len() >= 2 {
+                    groups.push(DuplicateGroup { hash, size, paths: dup_paths });
+                }
+            }
+        }
+
+        // Sort groups by size desc (biggest waste first)
+        groups.sort_by(|a, b| (b.size * b.paths.len() as u64).cmp(&(a.size * a.paths.len() as u64)));
+        Ok(groups)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(Serialize)]
+struct DiskUsageNode {
+    name: String,
+    path: String,
+    size: u64,
+    is_dir: bool,
+    children: Vec<DiskUsageNode>,
+}
+
+fn scan_usage_recursive(path: &Path, depth: usize, max_depth: usize) -> DiskUsageNode {
+    let name = path.file_name().map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string());
+
+    let meta = match fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(_) => return DiskUsageNode {
+            name, path: path.to_string_lossy().to_string(),
+            size: 0, is_dir: false, children: vec![],
+        },
+    };
+
+    if meta.file_type().is_symlink() || !meta.is_dir() {
+        return DiskUsageNode {
+            name,
+            path: path.to_string_lossy().to_string(),
+            size: meta.len(),
+            is_dir: false,
+            children: vec![],
+        };
+    }
+
+    let mut children: Vec<DiskUsageNode> = Vec::new();
+    let mut total: u64 = 0;
+
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let child = scan_usage_recursive(&p, depth + 1, max_depth);
+            total += child.size;
+            children.push(child);
+        }
+    }
+
+    children.sort_by(|a, b| b.size.cmp(&a.size));
+
+    // Only keep children within depth limit
+    if depth >= max_depth {
+        children.clear();
+    } else {
+        // Limit children to top 50 to avoid huge payloads
+        children.truncate(50);
+    }
+
+    DiskUsageNode {
+        name,
+        path: path.to_string_lossy().to_string(),
+        size: total,
+        is_dir: true,
+        children,
+    }
+}
+
+#[tauri::command]
+async fn scan_disk_usage(path: String, max_depth: usize) -> Result<DiskUsageNode, String> {
+    tokio::task::spawn_blocking(move || {
+        let p = PathBuf::from(&path);
+        if !p.exists() {
+            return Err("Path does not exist".to_string());
+        }
+        Ok(scan_usage_recursive(&p, 0, max_depth.max(1)))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 fn get_disk_info(path: String) -> Result<DiskInfo, String> {
     use std::mem::MaybeUninit;
@@ -1917,6 +2078,8 @@ fn main() {
             get_git_status,
             get_exif,
             compute_hashes,
+            find_duplicates,
+            scan_disk_usage,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Flux Explorer");
