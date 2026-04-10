@@ -94,6 +94,13 @@
           <span>/</span>
         </div>
         <div id="disk-info" class="disk-info"></div>
+        <div id="mounts"></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-item" id="trash-button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          <span>Corbeille</span>
+        </div>
       </div>
     </div>
 
@@ -162,10 +169,31 @@
       <span>Nouveau fichier</span>
     </div>
     <div class="ctx-separator"></div>
+    <div class="ctx-item" data-action="open-with">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span>Ouvrir avec...</span>
+    </div>
+    <div class="ctx-item" data-action="extract-here">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+      <span>Extraire ici</span>
+    </div>
+    <div class="ctx-item" data-action="compress-zip">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+      <span>Compresser en zip</span>
+    </div>
+    <div class="ctx-item" data-action="compress-targz">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+      <span>Compresser en tar.gz</span>
+    </div>
+    <div class="ctx-separator"></div>
     <div class="ctx-item" data-action="rename">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
       <span>Renommer</span>
       <kbd>F2</kbd>
+    </div>
+    <div class="ctx-item" data-action="batch-rename">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      <span>Renommer en masse</span>
     </div>
     <div class="ctx-item ctx-danger" data-action="delete">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -249,6 +277,94 @@
         </button>
       </div>
       <div id="preview-content" class="preview-content"></div>
+    </div>
+  </div>
+
+  <!-- Progress Overlay -->
+  <div id="progress-overlay" class="overlay hidden">
+    <div class="dialog" style="min-width: 460px">
+      <div class="dialog-title" id="progress-title">Op&eacute;ration en cours</div>
+      <div class="progress-info">
+        <div class="progress-file" id="progress-file"></div>
+        <div class="progress-bar"><div class="progress-bar-fill" id="progress-bar-fill"></div></div>
+        <div class="progress-stats">
+          <span id="progress-pct">0%</span>
+          <span id="progress-bytes">0 o / 0 o</span>
+          <span id="progress-files">0 / 0 fichiers</span>
+        </div>
+        <div class="progress-stats">
+          <span id="progress-speed">--</span>
+          <span id="progress-eta"></span>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button class="dialog-btn dialog-btn-danger" id="progress-cancel">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch Rename Overlay -->
+  <div id="batch-rename-overlay" class="overlay hidden">
+    <div class="dialog" style="min-width: 580px">
+      <div class="dialog-title">Renommage en masse</div>
+      <div class="batch-form">
+        <label>Pattern (vide pour garder, supporte {n}, {N}, {name}, {ext})</label>
+        <input type="text" id="batch-pattern" class="dialog-input" placeholder="ex: photo_{N}">
+        <div class="batch-row">
+          <div style="flex:1">
+            <label>Rechercher</label>
+            <input type="text" id="batch-find" class="dialog-input">
+          </div>
+          <div style="flex:1">
+            <label>Remplacer par</label>
+            <input type="text" id="batch-replace" class="dialog-input">
+          </div>
+        </div>
+        <div class="batch-row">
+          <label><input type="checkbox" id="batch-regex"> Sous-cha&icirc;ne</label>
+          <label>Casse:
+            <select id="batch-case" class="dialog-input">
+              <option value="none">Aucune</option>
+              <option value="lower">minuscule</option>
+              <option value="upper">MAJUSCULE</option>
+              <option value="title">Titre</option>
+            </select>
+          </label>
+          <label>D&eacute;but: <input type="number" id="batch-start" class="dialog-input" value="1" style="width:60px"></label>
+        </div>
+      </div>
+      <div class="batch-status" id="batch-status"></div>
+      <div class="batch-preview" id="batch-preview-list"></div>
+      <div class="dialog-actions">
+        <button class="dialog-btn" id="batch-rename-cancel">Annuler</button>
+        <button class="dialog-btn dialog-btn-primary" id="batch-rename-apply">Appliquer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Open With Overlay -->
+  <div id="open-with-overlay" class="overlay hidden">
+    <div class="dialog" style="min-width: 480px">
+      <div class="dialog-title">Ouvrir avec...</div>
+      <input type="text" id="open-with-search" class="dialog-input" placeholder="Filtrer...">
+      <div id="open-with-list" class="open-with-list"></div>
+      <div class="dialog-actions">
+        <button class="dialog-btn" id="open-with-cancel">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trash Overlay -->
+  <div id="trash-overlay" class="overlay hidden">
+    <div class="dialog" style="min-width: 600px; max-width: 800px">
+      <div class="dialog-title">Corbeille <span id="trash-count" style="font-weight: 400; color: var(--fg4); font-size: 12px"></span></div>
+      <div id="trash-list" class="trash-list"></div>
+      <div class="dialog-actions">
+        <button class="dialog-btn" id="trash-close">Fermer</button>
+        <button class="dialog-btn dialog-btn-danger" id="trash-empty">Vider</button>
+        <button class="dialog-btn dialog-btn-danger" id="trash-purge" disabled>Supprimer d&eacute;finitivement</button>
+        <button class="dialog-btn dialog-btn-primary" id="trash-restore" disabled>Restaurer</button>
+      </div>
     </div>
   </div>
 

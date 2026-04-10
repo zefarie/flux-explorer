@@ -6,6 +6,9 @@ import { clipboardCopy, clipboardCut, clipboardPaste } from './clipboard.js';
 import { showRenameDialog, showNewFolderDialog, showNewFileDialog, showDeleteDialog } from './dialogs.js';
 import { toggleBookmark, isBookmarked } from './bookmarks.js';
 import { showProperties } from './properties.js';
+import { extractHere, createArchive, isArchive } from './archives.js';
+import { showBatchRename } from './batch-rename.js';
+import { showOpenWith } from './open-with.js';
 
 export function setupContextMenu() {
   const menu = document.getElementById('context-menu');
@@ -46,6 +49,21 @@ export function setupContextMenu() {
       label.textContent = isBookmarked(targetEntry.path) ? 'Retirer des favoris' : 'Ajouter aux favoris';
     }
     menu.querySelector('[data-action="properties"]').classList.toggle('hidden', !hasTarget);
+
+    // Open with: only for files (not dirs)
+    menu.querySelector('[data-action="open-with"]').classList.toggle('hidden', !hasTarget || isDir);
+
+    // Extract here: only for archive files
+    const archiveExts = ['zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'zst', '7z', 'rar'];
+    const isArchiveFile = hasTarget && !isDir && targetEntry && archiveExts.some(e => targetEntry.name.toLowerCase().endsWith('.' + e));
+    menu.querySelector('[data-action="extract-here"]').classList.toggle('hidden', !isArchiveFile);
+
+    // Compress: hide if no selection or single dir without other selection
+    menu.querySelector('[data-action="compress-zip"]').classList.toggle('hidden', !hasTarget);
+    menu.querySelector('[data-action="compress-targz"]').classList.toggle('hidden', !hasTarget);
+
+    // Batch rename: only when multiple items selected
+    menu.querySelector('[data-action="batch-rename"]').classList.toggle('hidden', state.selected.size < 2);
 
     const x = Math.min(e.clientX, window.innerWidth - 240);
     const y = Math.min(e.clientY, window.innerHeight - 300);
@@ -104,6 +122,23 @@ function handleContextAction(action) {
       break;
     case 'properties':
       if (state.contextTarget) showProperties(state.contextTarget);
+      break;
+    case 'open-with':
+      if (state.contextTarget) showOpenWith(state.contextTarget);
+      break;
+    case 'extract-here':
+      if (state.contextTarget) extractHere(state.contextTarget);
+      break;
+    case 'compress-zip':
+      if (state.selected.size > 0) createArchive([...state.selected], 'zip');
+      else if (state.contextTarget) createArchive([state.contextTarget], 'zip');
+      break;
+    case 'compress-targz':
+      if (state.selected.size > 0) createArchive([...state.selected], 'tar.gz');
+      else if (state.contextTarget) createArchive([state.contextTarget], 'tar.gz');
+      break;
+    case 'batch-rename':
+      if (state.selected.size >= 2) showBatchRename([...state.selected]);
       break;
   }
 }

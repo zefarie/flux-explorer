@@ -562,6 +562,28 @@ body {
   font-size: 10.5px;
   color: var(--fg4);
 }
+
+/* Mounts */
+#mounts .mount-item {
+  display: flex;
+  flex-direction: column;
+}
+.mount-info {
+  padding: 2px 16px 4px 42px;
+  font-size: 10px;
+  color: var(--fg4);
+}
+.mount-eject {
+  margin-left: auto;
+  opacity: 0;
+  cursor: pointer;
+  display: flex;
+  padding: 2px;
+  border-radius: 3px;
+  transition: all var(--transition);
+}
+.sidebar-item:hover .mount-eject { opacity: 0.6; }
+.mount-eject:hover { opacity: 1 !important; background: var(--bg3); color: var(--orange); }
 .disk-bar {
   height: 4px;
   background: var(--bg2);
@@ -1276,4 +1298,195 @@ body {
 .dialog-input::selection {
   background: var(--yellow);
   color: var(--bg);
+}
+
+/* ============================================
+   PROGRESS DIALOG
+   ============================================ */
+.progress-info {
+  margin-bottom: 16px;
+}
+.progress-file {
+  font-size: 12px;
+  color: var(--fg2);
+  margin-bottom: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.progress-bar {
+  height: 8px;
+  background: var(--bg2);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--yellow);
+  border-radius: 4px;
+  transition: width 100ms linear;
+}
+.progress-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--fg3);
+  gap: 12px;
+  margin-top: 4px;
+}
+
+/* ============================================
+   BATCH RENAME
+   ============================================ */
+.batch-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.batch-form label {
+  font-size: 11px;
+  color: var(--fg4);
+  display: block;
+  margin-bottom: 2px;
+}
+.batch-form .dialog-input {
+  margin-bottom: 0;
+}
+.batch-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+.batch-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--fg2);
+}
+.batch-row input[type="checkbox"] { accent-color: var(--yellow); }
+.batch-row select {
+  background: var(--bg);
+  border: 1px solid var(--bg3);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+}
+.batch-status {
+  font-size: 11.5px;
+  color: var(--fg3);
+  margin-bottom: 6px;
+}
+.batch-preview {
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--bg3);
+  border-radius: var(--radius);
+  padding: 6px;
+  margin-bottom: 16px;
+}
+.batch-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  font-size: 11.5px;
+  font-family: 'JetBrains Mono NF', monospace;
+}
+.batch-preview-row.conflict { color: var(--red); }
+.batch-old { color: var(--fg4); flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.batch-arrow { color: var(--fg4); }
+.batch-new { color: var(--fg); flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.batch-conflict { font-size: 10px; color: var(--red); padding: 1px 6px; border: 1px solid var(--red); border-radius: 3px; }
+
+/* ============================================
+   OPEN WITH
+   ============================================ */
+.open-with-list {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--bg3);
+  border-radius: var(--radius);
+  background: var(--bg);
+  margin-bottom: 16px;
+}
+.open-with-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--bg2);
+  transition: background var(--transition);
+}
+.open-with-item:hover { background: var(--bg1); }
+.open-with-item:last-child { border-bottom: none; }
+.open-with-name {
+  font-size: 12.5px;
+  color: var(--fg);
+  font-weight: 600;
+}
+.open-with-exec {
+  font-size: 10.5px;
+  color: var(--fg4);
+  font-family: 'JetBrains Mono NF', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================================
+   TRASH
+   ============================================ */
+.trash-list {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--bg3);
+  border-radius: var(--radius);
+  background: var(--bg);
+  margin-bottom: 16px;
+}
+.trash-empty-state {
+  padding: 30px;
+  text-align: center;
+  color: var(--fg4);
+  font-size: 13px;
+}
+.trash-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--bg2);
+  transition: background var(--transition);
+}
+.trash-item:hover { background: var(--bg1); }
+.trash-item.selected {
+  background: rgba(215, 153, 33, 0.12);
+  border-left: 3px solid var(--yellow);
+}
+.trash-item:last-child { border-bottom: none; }
+.trash-name {
+  font-size: 12.5px;
+  color: var(--fg);
+  font-weight: 600;
+}
+.trash-path {
+  font-size: 10.5px;
+  color: var(--fg4);
+  font-family: 'JetBrains Mono NF', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.trash-meta {
+  font-size: 10.5px;
+  color: var(--fg3);
+  margin-top: 2px;
+}
+.dialog-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

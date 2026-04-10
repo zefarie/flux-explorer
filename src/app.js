@@ -17,6 +17,11 @@ import { setupTitlebar } from './modules/titlebar.js';
 import { loadBookmarks } from './modules/bookmarks.js';
 import { setupProperties } from './modules/properties.js';
 import { setupSidebarResize } from './modules/resize.js';
+import { setupMounts, loadMounts } from './modules/mounts.js';
+import { setupProgress } from './modules/progress.js';
+import { setupBatchRename } from './modules/batch-rename.js';
+import { setupOpenWith } from './modules/open-with.js';
+import { setupTrash, showTrash } from './modules/trash.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   // Titlebar
@@ -43,8 +48,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupProperties();
   setupTabs();
   setupSidebarResize();
+  setupMounts();
+  setupProgress();
+  setupBatchRename();
+  setupOpenWith();
+  setupTrash();
   await loadQuickAccess();
   loadBookmarks();
+  loadMounts();
+
+  document.getElementById('trash-button').addEventListener('click', showTrash);
 
   // Restore UI state from prefs
   document.getElementById('btn-view-grid').classList.toggle('active', state.viewMode === 'grid');
