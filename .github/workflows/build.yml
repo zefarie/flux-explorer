@@ -49,3 +49,22 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: flux-explorer-deb
+          path: src-tauri/target/release/bundle/deb/*.deb
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: flux-explorer-appimage
+          path: src-tauri/target/release/bundle/appimage/*.AppImage
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: flux-explorer-binary
+          path: src-tauri/target/release/flux-explorer
