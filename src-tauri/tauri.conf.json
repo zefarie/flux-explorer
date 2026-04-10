@@ -25,6 +25,11 @@
     }
   },
   "bundle": {
+    "active": true,
+    "targets": ["deb", "appimage", "rpm"],
+    "category": "Utility",
+    "shortDescription": "Lightweight file explorer for Linux",
+    "longDescription": "A lightweight file explorer built with Tauri v2 and Rust, designed for Linux (Wayland/Hyprland). Features tabs, bookmarks, file preview, syntax highlighting, and Gruvbox theme.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
