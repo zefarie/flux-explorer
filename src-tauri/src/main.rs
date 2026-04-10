@@ -226,6 +226,186 @@ fn delete_items_sync(paths: Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
+// Cancellation flag for in-progress operations
+static OPERATION_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+fn cancel_operation() {
+    OPERATION_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[derive(Serialize, Clone)]
+struct ProgressUpdate {
+    operation_id: String,
+    current_file: String,
+    bytes_done: u64,
+    bytes_total: u64,
+    files_done: u64,
+    files_total: u64,
+}
+
+fn count_total_size(sources: &[String]) -> (u64, u64) {
+    let mut size = 0u64;
+    let mut count = 0u64;
+    for src in sources {
+        let p = Path::new(src);
+        if let Ok(meta) = fs::symlink_metadata(p) {
+            if meta.is_dir() && !meta.is_symlink() {
+                count_dir_size(p, &mut size, &mut count);
+            } else {
+                size += meta.len();
+                count += 1;
+            }
+        }
+    }
+    (size, count)
+}
+
+fn count_dir_size(path: &Path, size: &mut u64, count: &mut u64) {
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if let Ok(meta) = fs::symlink_metadata(&p) {
+                if meta.is_dir() && !meta.is_symlink() {
+                    count_dir_size(&p, size, count);
+                } else {
+                    *size += meta.len();
+                    *count += 1;
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
+async fn copy_items_progress(
+    sources: Vec<String>,
+    destination: String,
+    operation_id: String,
+    app: AppHandle,
+) -> Result<(), String> {
+    OPERATION_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
+    tokio::task::spawn_blocking(move || copy_items_progress_sync(sources, destination, operation_id, app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn copy_items_progress_sync(
+    sources: Vec<String>,
+    destination: String,
+    operation_id: String,
+    app: AppHandle,
+) -> Result<(), String> {
+    let dest = PathBuf::from(&destination);
+    if !dest.is_dir() {
+        return Err(format!("Destination is not a directory: {}", destination));
+    }
+
+    let (total_bytes, total_files) = count_total_size(&sources);
+    let mut bytes_done = 0u64;
+    let mut files_done = 0u64;
+
+    for src in &sources {
+        if OPERATION_CANCEL.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("Annule".to_string());
+        }
+        let src_path = Path::new(src);
+        let file_name = src_path.file_name().ok_or_else(|| "Invalid path".to_string())?;
+        let target = dest.join(file_name);
+        let target = unique_path(&target);
+        if src_path.is_dir() {
+            copy_dir_progress(src_path, &target, &operation_id, &app, &mut bytes_done, &mut files_done, total_bytes, total_files)?;
+        } else {
+            copy_file_progress(src_path, &target, &operation_id, &app, &mut bytes_done, &mut files_done, total_bytes, total_files)?;
+        }
+    }
+    Ok(())
+}
+
+fn emit_progress(
+    app: &AppHandle,
+    operation_id: &str,
+    current_file: &str,
+    bytes_done: u64,
+    bytes_total: u64,
+    files_done: u64,
+    files_total: u64,
+) {
+    let _ = app.emit("copy-progress", ProgressUpdate {
+        operation_id: operation_id.to_string(),
+        current_file: current_file.to_string(),
+        bytes_done,
+        bytes_total,
+        files_done,
+        files_total,
+    });
+}
+
+fn copy_file_progress(
+    src: &Path,
+    dst: &Path,
+    operation_id: &str,
+    app: &AppHandle,
+    bytes_done: &mut u64,
+    files_done: &mut u64,
+    total_bytes: u64,
+    total_files: u64,
+) -> Result<(), String> {
+    use std::io::{Read, Write};
+    let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    emit_progress(app, operation_id, &name, *bytes_done, total_bytes, *files_done, total_files);
+
+    let mut input = fs::File::open(src).map_err(|e| format!("Open {}: {}", src.display(), e))?;
+    let mut output = fs::File::create(dst).map_err(|e| format!("Create {}: {}", dst.display(), e))?;
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut last_emit = Instant::now();
+
+    loop {
+        if OPERATION_CANCEL.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = fs::remove_file(dst);
+            return Err("Annule".to_string());
+        }
+        let n = input.read(&mut buf).map_err(|e| format!("Read: {}", e))?;
+        if n == 0 { break; }
+        output.write_all(&buf[..n]).map_err(|e| format!("Write: {}", e))?;
+        *bytes_done += n as u64;
+
+        if last_emit.elapsed() >= Duration::from_millis(100) {
+            emit_progress(app, operation_id, &name, *bytes_done, total_bytes, *files_done, total_files);
+            last_emit = Instant::now();
+        }
+    }
+    *files_done += 1;
+    Ok(())
+}
+
+fn copy_dir_progress(
+    src: &Path,
+    dst: &Path,
+    operation_id: &str,
+    app: &AppHandle,
+    bytes_done: &mut u64,
+    files_done: &mut u64,
+    total_bytes: u64,
+    total_files: u64,
+) -> Result<(), String> {
+    fs::create_dir_all(dst).map_err(|e| format!("Cannot create dir: {}", e))?;
+    for entry in fs::read_dir(src).map_err(|e| format!("Cannot read dir: {}", e))? {
+        if OPERATION_CANCEL.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("Annule".to_string());
+        }
+        let entry = entry.map_err(|e| format!("Read error: {}", e))?;
+        let src_child = entry.path();
+        let dst_child = dst.join(entry.file_name());
+        if src_child.is_dir() {
+            copy_dir_progress(&src_child, &dst_child, operation_id, app, bytes_done, files_done, total_bytes, total_files)?;
+        } else {
+            copy_file_progress(&src_child, &dst_child, operation_id, app, bytes_done, files_done, total_bytes, total_files)?;
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn copy_items(sources: Vec<String>, destination: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || copy_items_sync(sources, destination))
@@ -917,6 +1097,546 @@ fn guess_mime(ext: &str, is_dir: bool) -> String {
     }.to_string()
 }
 
+// ============================================
+// TRASH
+// ============================================
+
+#[derive(Serialize)]
+struct TrashItem {
+    id: String,
+    name: String,
+    original_path: String,
+    deleted_at: i64,
+    size: u64,
+}
+
+#[tauri::command]
+fn list_trash() -> Result<Vec<TrashItem>, String> {
+    use trash::os_limited;
+    let items = os_limited::list().map_err(|e| format!("Cannot list trash: {}", e))?;
+
+    let mut result = Vec::new();
+    for item in items {
+        let size = fs::metadata(item.original_path())
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let name = item.name.to_string_lossy().to_string();
+        let original_path = item.original_path().to_string_lossy().to_string();
+        let deleted_at = item.time_deleted;
+        let id = original_path.clone();
+
+        result.push(TrashItem {
+            id,
+            name,
+            original_path,
+            deleted_at,
+            size,
+        });
+    }
+
+    result.sort_by(|a, b| b.deleted_at.cmp(&a.deleted_at));
+    Ok(result)
+}
+
+#[tauri::command]
+fn restore_trash_items(ids: Vec<String>) -> Result<(), String> {
+    use trash::os_limited;
+    let all = os_limited::list().map_err(|e| e.to_string())?;
+    let to_restore: Vec<_> = all.into_iter()
+        .filter(|item| ids.contains(&item.original_path().to_string_lossy().to_string()))
+        .collect();
+
+    os_limited::restore_all(to_restore).map_err(|e| format!("Restore failed: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn purge_trash_items(ids: Vec<String>) -> Result<(), String> {
+    use trash::os_limited;
+    let all = os_limited::list().map_err(|e| e.to_string())?;
+    let to_purge: Vec<_> = all.into_iter()
+        .filter(|item| ids.contains(&item.original_path().to_string_lossy().to_string()))
+        .collect();
+
+    os_limited::purge_all(to_purge).map_err(|e| format!("Purge failed: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn empty_trash() -> Result<(), String> {
+    use trash::os_limited;
+    let all = os_limited::list().map_err(|e| e.to_string())?;
+    os_limited::purge_all(all).map_err(|e| format!("Empty trash failed: {}", e))?;
+    Ok(())
+}
+
+// ============================================
+// OPEN WITH
+// ============================================
+
+#[derive(Serialize)]
+struct DesktopApp {
+    name: String,
+    exec: String,
+    icon: String,
+    desktop_file: String,
+}
+
+#[tauri::command]
+fn list_applications() -> Result<Vec<DesktopApp>, String> {
+    let mut apps = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    let dirs = vec![
+        "/usr/share/applications".to_string(),
+        "/usr/local/share/applications".to_string(),
+        format!("{}/.local/share/applications", dirs_home()),
+        format!("{}/.local/share/flatpak/exports/share/applications", dirs_home()),
+        "/var/lib/flatpak/exports/share/applications".to_string(),
+    ];
+
+    for dir in &dirs {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("desktop") { continue; }
+
+                let content = match fs::read_to_string(&path) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+
+                let mut name = String::new();
+                let mut exec = String::new();
+                let mut icon = String::new();
+                let mut no_display = false;
+                let mut hidden = false;
+                let mut in_desktop_entry = false;
+
+                for line in content.lines() {
+                    let line = line.trim();
+                    if line.starts_with('[') {
+                        in_desktop_entry = line == "[Desktop Entry]";
+                        continue;
+                    }
+                    if !in_desktop_entry { continue; }
+
+                    if let Some(v) = line.strip_prefix("Name=") { if name.is_empty() { name = v.to_string(); } }
+                    else if let Some(v) = line.strip_prefix("Exec=") { exec = v.to_string(); }
+                    else if let Some(v) = line.strip_prefix("Icon=") { icon = v.to_string(); }
+                    else if line == "NoDisplay=true" { no_display = true; }
+                    else if line == "Hidden=true" { hidden = true; }
+                }
+
+                if name.is_empty() || exec.is_empty() || no_display || hidden { continue; }
+                if !seen.insert(name.clone()) { continue; }
+
+                apps.push(DesktopApp {
+                    name,
+                    exec,
+                    icon,
+                    desktop_file: path.to_string_lossy().to_string(),
+                });
+            }
+        }
+    }
+
+    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(apps)
+}
+
+#[tauri::command]
+fn open_with(file_path: String, exec: String) -> Result<(), String> {
+    // Strip Exec field codes (%f, %F, %u, %U, etc.)
+    let clean = exec
+        .replace("%f", "")
+        .replace("%F", "")
+        .replace("%u", "")
+        .replace("%U", "")
+        .replace("%i", "")
+        .replace("%c", "")
+        .replace("%k", "")
+        .trim()
+        .to_string();
+
+    // Parse command and args
+    let parts: Vec<&str> = clean.split_whitespace().collect();
+    if parts.is_empty() {
+        return Err("Commande vide".to_string());
+    }
+
+    let mut cmd = Command::new(parts[0]);
+    for arg in &parts[1..] { cmd.arg(arg); }
+    cmd.arg(&file_path);
+    cmd.spawn().map_err(|e| format!("Cannot launch: {}", e))?;
+    Ok(())
+}
+
+// ============================================
+// BATCH RENAME
+// ============================================
+
+#[derive(Serialize)]
+struct RenamePreview {
+    old_path: String,
+    new_name: String,
+    conflict: bool,
+}
+
+#[tauri::command]
+fn batch_rename_preview(
+    paths: Vec<String>,
+    pattern: String,
+    find: String,
+    replace: String,
+    use_regex: bool,
+    case_mode: String,
+    start_index: u32,
+) -> Result<Vec<RenamePreview>, String> {
+    let mut results = Vec::new();
+    let regex = if use_regex && !find.is_empty() {
+        Some(regex_lite_compile(&find).map_err(|e| format!("Regex invalide: {}", e))?)
+    } else {
+        None
+    };
+
+    for (i, path) in paths.iter().enumerate() {
+        let p = Path::new(path);
+        let original_name = p.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let stem = p.file_stem()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let ext = p.extension()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        let mut new_stem = stem.clone();
+
+        // Apply find/replace
+        if !find.is_empty() {
+            if let Some(ref re) = regex {
+                new_stem = regex_lite_replace(re, &new_stem, &replace);
+            } else {
+                new_stem = new_stem.replace(&find, &replace);
+            }
+        }
+
+        // Apply pattern (supports {n}, {N}, {name}, {ext})
+        if !pattern.is_empty() {
+            new_stem = pattern.clone()
+                .replace("{n}", &(start_index + i as u32).to_string())
+                .replace("{N}", &format!("{:03}", start_index + i as u32))
+                .replace("{name}", &new_stem)
+                .replace("{ext}", &ext);
+        }
+
+        // Apply case
+        new_stem = match case_mode.as_str() {
+            "lower" => new_stem.to_lowercase(),
+            "upper" => new_stem.to_uppercase(),
+            "title" => title_case(&new_stem),
+            _ => new_stem,
+        };
+
+        let new_name = if ext.is_empty() {
+            new_stem
+        } else {
+            format!("{}.{}", new_stem, ext)
+        };
+
+        let parent = p.parent().unwrap_or(Path::new("/"));
+        let conflict = parent.join(&new_name).exists() && new_name != original_name;
+
+        results.push(RenamePreview {
+            old_path: path.clone(),
+            new_name,
+            conflict,
+        });
+    }
+
+    Ok(results)
+}
+
+#[tauri::command]
+async fn batch_rename_apply(renames: Vec<(String, String)>) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut errors = Vec::new();
+        for (old_path, new_name) in renames {
+            let old = Path::new(&old_path);
+            if let Some(parent) = old.parent() {
+                let new_path = parent.join(&new_name);
+                if let Err(e) = fs::rename(&old, &new_path) {
+                    errors.push(format!("{}: {}", old_path, e));
+                }
+            }
+        }
+        Ok(errors)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn title_case(s: &str) -> String {
+    s.split_whitespace()
+        .map(|w| {
+            let mut chars = w.chars();
+            match chars.next() {
+                Some(c) => c.to_uppercase().collect::<String>() + chars.as_str().to_lowercase().as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+// Tiny regex wrapper - we don't need a full regex crate, use simple wildcard matching
+fn regex_lite_compile(pattern: &str) -> Result<String, String> {
+    // For now, just validate it's not empty
+    if pattern.is_empty() { return Err("empty".to_string()); }
+    Ok(pattern.to_string())
+}
+
+fn regex_lite_replace(pattern: &str, input: &str, replacement: &str) -> String {
+    // Simple substring replace for now (regex would need a crate)
+    input.replace(pattern, replacement)
+}
+
+// ============================================
+// MOUNT POINTS
+// ============================================
+
+#[derive(Serialize)]
+struct MountPoint {
+    name: String,
+    path: String,
+    fs_type: String,
+    is_removable: bool,
+    total: u64,
+    available: u64,
+    used: u64,
+}
+
+#[tauri::command]
+fn get_mount_points() -> Result<Vec<MountPoint>, String> {
+    let content = fs::read_to_string("/proc/mounts")
+        .map_err(|e| format!("Cannot read /proc/mounts: {}", e))?;
+
+    let home = dirs_home();
+    let mut mounts = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for line in content.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 3 { continue; }
+
+        let device = parts[0];
+        let mount_point = parts[1];
+        let fs_type = parts[2];
+
+        // Skip pseudo filesystems and irrelevant mounts
+        if !device.starts_with('/') { continue; }
+        if matches!(fs_type, "proc" | "sysfs" | "tmpfs" | "devtmpfs" | "devpts" | "cgroup" | "cgroup2" | "pstore" | "bpf" | "tracefs" | "debugfs" | "mqueue" | "hugetlbfs" | "configfs" | "fusectl" | "fuse.gvfsd-fuse" | "autofs" | "binfmt_misc" | "rpc_pipefs" | "nfsd") { continue; }
+        if mount_point.starts_with("/snap/") || mount_point.starts_with("/var/lib/") || mount_point.starts_with("/run/") || mount_point.starts_with("/boot/efi") { continue; }
+        if mount_point == "/" && !mounts.is_empty() { continue; }
+
+        // Dedupe by mount point
+        if !seen.insert(mount_point.to_string()) { continue; }
+
+        // Get name (last segment) and detect removable (heuristic: under /mnt, /media, /run/media)
+        let is_removable = mount_point.starts_with("/mnt/") || mount_point.starts_with("/media/") || mount_point.starts_with("/run/media/");
+
+        // Skip mounts under home that are not removable
+        if !is_removable && mount_point != "/" && mount_point.starts_with(&home) {
+            continue;
+        }
+
+        let name = if mount_point == "/" {
+            "Systeme".to_string()
+        } else {
+            Path::new(mount_point)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| mount_point.to_string())
+        };
+
+        // Get disk info
+        let (total, available, used) = match get_disk_stats(mount_point) {
+            Some((t, a)) => (t, a, t.saturating_sub(a)),
+            None => (0, 0, 0),
+        };
+
+        mounts.push(MountPoint {
+            name,
+            path: mount_point.to_string(),
+            fs_type: fs_type.to_string(),
+            is_removable,
+            total,
+            available,
+            used,
+        });
+    }
+
+    Ok(mounts)
+}
+
+fn get_disk_stats(path: &str) -> Option<(u64, u64)> {
+    use std::mem::MaybeUninit;
+    let c_path = std::ffi::CString::new(path).ok()?;
+    let mut stat = MaybeUninit::<libc::statvfs>::uninit();
+    let ret = unsafe { libc::statvfs(c_path.as_ptr(), stat.as_mut_ptr()) };
+    if ret != 0 { return None; }
+    let stat = unsafe { stat.assume_init() };
+    let total = stat.f_blocks * stat.f_frsize;
+    let available = stat.f_bavail * stat.f_frsize;
+    Some((total, available))
+}
+
+#[tauri::command]
+fn unmount_path(path: String) -> Result<(), String> {
+    let status = Command::new("udisksctl")
+        .args(["unmount", "-b", &path])
+        .status();
+
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        _ => {
+            // Fallback to umount
+            let status = Command::new("umount").arg(&path).status();
+            match status {
+                Ok(s) if s.success() => Ok(()),
+                Ok(s) => Err(format!("Demontage echoue (code {})", s.code().unwrap_or(-1))),
+                Err(e) => Err(format!("Erreur: {}", e)),
+            }
+        }
+    }
+}
+
+// ============================================
+// ARCHIVES
+// ============================================
+
+fn detect_archive_type(path: &str) -> Option<&'static str> {
+    let lower = path.to_lowercase();
+    if lower.ends_with(".zip") { Some("zip") }
+    else if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") { Some("tar.gz") }
+    else if lower.ends_with(".tar.bz2") || lower.ends_with(".tbz2") { Some("tar.bz2") }
+    else if lower.ends_with(".tar.xz") || lower.ends_with(".txz") { Some("tar.xz") }
+    else if lower.ends_with(".tar.zst") { Some("tar.zst") }
+    else if lower.ends_with(".tar") { Some("tar") }
+    else if lower.ends_with(".7z") { Some("7z") }
+    else if lower.ends_with(".rar") { Some("rar") }
+    else if lower.ends_with(".gz") { Some("gz") }
+    else if lower.ends_with(".xz") { Some("xz") }
+    else if lower.ends_with(".bz2") { Some("bz2") }
+    else { None }
+}
+
+#[tauri::command]
+async fn extract_archive(path: String, destination: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || extract_archive_sync(path, destination))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn extract_archive_sync(path: String, destination: String) -> Result<(), String> {
+    let kind = detect_archive_type(&path).ok_or_else(|| "Format d'archive non supporte".to_string())?;
+    fs::create_dir_all(&destination).map_err(|e| format!("Cannot create dest: {}", e))?;
+
+    let status = match kind {
+        "zip" => Command::new("unzip").args(["-o", &path, "-d", &destination]).status(),
+        "tar" => Command::new("tar").args(["-xf", &path, "-C", &destination]).status(),
+        "tar.gz" => Command::new("tar").args(["-xzf", &path, "-C", &destination]).status(),
+        "tar.bz2" => Command::new("tar").args(["-xjf", &path, "-C", &destination]).status(),
+        "tar.xz" => Command::new("tar").args(["-xJf", &path, "-C", &destination]).status(),
+        "tar.zst" => Command::new("tar").args(["--zstd", "-xf", &path, "-C", &destination]).status(),
+        "7z" => Command::new("7z").args(["x", &path, &format!("-o{}", destination), "-y"]).status(),
+        "rar" => Command::new("unrar").args(["x", "-o+", &path, &destination]).status(),
+        "gz" => Command::new("sh").args(["-c", &format!("gunzip -k -c '{}' > '{}/{}'",
+            path,
+            destination,
+            Path::new(&path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+        )]).status(),
+        "xz" => Command::new("sh").args(["-c", &format!("unxz -k -c '{}' > '{}/{}'",
+            path,
+            destination,
+            Path::new(&path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+        )]).status(),
+        "bz2" => Command::new("sh").args(["-c", &format!("bunzip2 -k -c '{}' > '{}/{}'",
+            path,
+            destination,
+            Path::new(&path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+        )]).status(),
+        _ => return Err(format!("Type non supporte: {}", kind)),
+    };
+
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        Ok(s) => Err(format!("L'extraction a echoue (code {})", s.code().unwrap_or(-1))),
+        Err(e) => Err(format!("Outil manquant: {}", e)),
+    }
+}
+
+#[tauri::command]
+async fn create_archive(sources: Vec<String>, destination: String, format: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || create_archive_sync(sources, destination, format))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn create_archive_sync(sources: Vec<String>, destination: String, format: String) -> Result<(), String> {
+    if sources.is_empty() {
+        return Err("Aucun fichier selectionne".to_string());
+    }
+
+    // Get common parent directory and relative names
+    let first = Path::new(&sources[0]);
+    let parent = first.parent().ok_or_else(|| "Invalid source path".to_string())?;
+    let names: Vec<String> = sources.iter()
+        .filter_map(|s| Path::new(s).file_name().map(|n| n.to_string_lossy().to_string()))
+        .collect();
+
+    let status = match format.as_str() {
+        "zip" => {
+            let mut cmd = Command::new("zip");
+            cmd.arg("-r").arg(&destination);
+            for n in &names { cmd.arg(n); }
+            cmd.current_dir(parent).status()
+        }
+        "tar.gz" => {
+            let mut cmd = Command::new("tar");
+            cmd.arg("-czf").arg(&destination);
+            for n in &names { cmd.arg(n); }
+            cmd.current_dir(parent).status()
+        }
+        "tar.xz" => {
+            let mut cmd = Command::new("tar");
+            cmd.arg("-cJf").arg(&destination);
+            for n in &names { cmd.arg(n); }
+            cmd.current_dir(parent).status()
+        }
+        "7z" => {
+            let mut cmd = Command::new("7z");
+            cmd.arg("a").arg(&destination);
+            for n in &names { cmd.arg(n); }
+            cmd.current_dir(parent).status()
+        }
+        _ => return Err(format!("Format non supporte: {}", format)),
+    };
+
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        Ok(s) => Err(format!("La creation a echoue (code {})", s.code().unwrap_or(-1))),
+        Err(e) => Err(format!("Outil manquant: {}", e)),
+    }
+}
+
+#[tauri::command]
+fn is_archive(path: String) -> bool {
+    detect_archive_type(&path).is_some()
+}
+
 const PERM_FLAGS: &[(u32, char)] = &[
     (0o400, 'r'), (0o200, 'w'), (0o100, 'x'),
     (0o040, 'r'), (0o020, 'w'), (0o010, 'x'),
@@ -1010,6 +1730,21 @@ fn main() {
             get_disk_info,
             get_file_properties,
             get_pdf_preview,
+            extract_archive,
+            create_archive,
+            is_archive,
+            get_mount_points,
+            unmount_path,
+            copy_items_progress,
+            cancel_operation,
+            batch_rename_preview,
+            batch_rename_apply,
+            list_applications,
+            open_with,
+            list_trash,
+            restore_trash_items,
+            purge_trash_items,
+            empty_trash,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Flux Explorer");
