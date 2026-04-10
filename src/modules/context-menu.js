@@ -10,6 +10,7 @@ import { extractHere, createArchive, isArchive } from './archives.js';
 import { showBatchRename } from './batch-rename.js';
 import { showOpenWith } from './open-with.js';
 import { showHash } from './hash.js';
+import { startInlineRename } from './inline-rename.js';
 
 export function setupContextMenu() {
   const menu = document.getElementById('context-menu');
@@ -119,7 +120,13 @@ function handleContextAction(action) {
       showNewFileDialog();
       break;
     case 'rename':
-      if (state.contextTarget) showRenameDialog(state.contextTarget);
+      if (state.contextTarget) {
+        // Defer to next tick so the menu has time to close
+        const path = state.contextTarget;
+        setTimeout(() => {
+          if (!startInlineRename(path)) showRenameDialog(path);
+        }, 0);
+      }
       break;
     case 'delete':
       showDeleteDialog();

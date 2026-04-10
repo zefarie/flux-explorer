@@ -4,13 +4,14 @@ import { navigateTo, goBack, goForward, goUp, refresh, showPathInput } from './n
 import { renderEntries, sortEntries, updateSelection, setViewMode, toggleHidden } from './files.js';
 import { clipboardCopy, clipboardCut, clipboardPaste } from './clipboard.js';
 import { showRenameDialog, showNewFolderDialog, showDeleteDialog } from './dialogs.js';
+import { startInlineRename } from './inline-rename.js';
 import { openPreview, closePreview } from './preview.js';
 import { performSearch, toggleSearchContent } from './search.js';
 import { createTab, closeTab, getActiveTab, getTabCount } from './tabs.js';
 
 export function setupKeyboard() {
   document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.isContentEditable) return;
 
     // Ctrl+T -- New tab
     if (e.ctrlKey && e.key === 't') {
@@ -53,10 +54,10 @@ export function setupKeyboard() {
 
     if (e.key === 'F2' && state.selected.size === 1) {
       e.preventDefault();
-      showRenameDialog([...state.selected][0]);
+      const path = [...state.selected][0];
+      if (!startInlineRename(path)) showRenameDialog(path);
       return;
     }
-
     if (e.key === 'F5') {
       e.preventDefault();
       refresh();
