@@ -8,14 +8,45 @@ const PREVIEW_IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', '
 const PREVIEW_VIDEO_EXTS = ['mp4', 'webm', 'ogg', 'mov'];
 const PREVIEW_AUDIO_EXTS = ['mp3', 'flac', 'wav', 'ogg', 'aac', 'm4a', 'opus'];
 
+let currentPreviewEntry = null;
+
 export function setupPreview() {
   document.getElementById('preview-close').addEventListener('click', closePreview);
   document.getElementById('preview-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'preview-overlay') closePreview();
   });
+
+  // Gallery navigation in preview
+  document.addEventListener('keydown', (e) => {
+    if (!state.previewOpen) return;
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      navigateGallery(-1);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      navigateGallery(1);
+    }
+  });
+}
+
+function getGalleryImages() {
+  return state.entries.filter(e => !e.is_dir && PREVIEW_IMAGE_EXTS.includes(e.extension));
+}
+
+function navigateGallery(direction) {
+  if (!currentPreviewEntry) return;
+  const images = getGalleryImages();
+  if (images.length === 0) return;
+
+  const idx = images.findIndex(e => e.path === currentPreviewEntry.path);
+  if (idx === -1) return;
+
+  const nextIdx = (idx + direction + images.length) % images.length;
+  openPreview(images[nextIdx]);
 }
 
 export async function openPreview(entry) {
+  currentPreviewEntry = entry;
   const overlay = document.getElementById('preview-overlay');
   const content = document.getElementById('preview-content');
   const filename = document.getElementById('preview-filename');
@@ -25,6 +56,16 @@ export async function openPreview(entry) {
   const metaParts = [];
   if (!entry.is_dir) metaParts.push(formatSize(entry.size));
   if (entry.permissions) metaParts.push(entry.permissions);
+
+  // Add gallery position for images
+  if (PREVIEW_IMAGE_EXTS.includes(entry.extension)) {
+    const images = getGalleryImages();
+    const idx = images.findIndex(e => e.path === entry.path);
+    if (idx !== -1 && images.length > 1) {
+      metaParts.push(`${idx + 1} / ${images.length}`);
+    }
+  }
+
   meta.textContent = metaParts.join(' - ');
 
   content.innerHTML = '<div class="spinner"></div>';
@@ -92,4 +133,5 @@ export function closePreview() {
   document.getElementById('preview-overlay').classList.add('hidden');
   document.getElementById('preview-content').innerHTML = '';
   state.previewOpen = false;
+  currentPreviewEntry = null;
 }
