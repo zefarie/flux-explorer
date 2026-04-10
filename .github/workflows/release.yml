@@ -46,6 +46,58 @@ jobs:
       - name: Install npm deps
         run: npm ci || npm install
 
+      - name: Generate release notes
+        id: notes
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..${GITHUB_REF_NAME}"
+          fi
+
+          {
+            echo "## ${GITHUB_REF_NAME#v} - $(date +%Y-%m-%d)"
+            echo ""
+
+            ADDED=$(git log $RANGE --pretty=format:'- %s' --grep='^feat' || true)
+            if [ -n "$ADDED" ]; then
+              echo "### Added"
+              echo "$ADDED" | sed 's/feat[^:]*: //'
+              echo ""
+            fi
+
+            FIXED=$(git log $RANGE --pretty=format:'- %s' --grep='^fix' || true)
+            if [ -n "$FIXED" ]; then
+              echo "### Fixed"
+              echo "$FIXED" | sed 's/fix[^:]*: //'
+              echo ""
+            fi
+
+            CHANGED=$(git log $RANGE --pretty=format:'- %s' --grep='^refactor\|^chore' || true)
+            if [ -n "$CHANGED" ]; then
+              echo "### Changed"
+              echo "$CHANGED" | sed 's/\(refactor\|chore\)[^:]*: //'
+              echo ""
+            fi
+
+            PERF=$(git log $RANGE --pretty=format:'- %s' --grep='^perf' || true)
+            if [ -n "$PERF" ]; then
+              echo "### Performance"
+              echo "$PERF" | sed 's/perf[^:]*: //'
+              echo ""
+            fi
+
+            DOCS=$(git log $RANGE --pretty=format:'- %s' --grep='^docs' || true)
+            if [ -n "$DOCS" ]; then
+              echo "### Documentation"
+              echo "$DOCS" | sed 's/docs[^:]*: //'
+              echo ""
+            fi
+          } > release_notes.md
+
+          cat release_notes.md
+
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -53,6 +105,6 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Flux Explorer ${{ github.ref_name }}'
-          releaseBody: 'See CHANGELOG.md for details.'
+          releaseBodyPath: release_notes.md
           releaseDraft: false
           prerelease: false
