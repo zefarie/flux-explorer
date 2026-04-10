@@ -14,17 +14,23 @@ function loadPrefs() {
   }
 }
 
+let savePrefsTimer = null;
+
 export function savePrefs() {
-  const prefs = {
-    viewMode: state.viewMode,
-    showHidden: state.showHidden,
-    sortBy: state.sortBy,
-    sortAsc: state.sortAsc,
-    lastPath: state.currentPath,
-  };
-  try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
-  } catch (_) {}
+  if (savePrefsTimer) clearTimeout(savePrefsTimer);
+  savePrefsTimer = setTimeout(() => {
+    savePrefsTimer = null;
+    const prefs = {
+      viewMode: state.viewMode,
+      showHidden: state.showHidden,
+      sortBy: state.sortBy,
+      sortAsc: state.sortAsc,
+      lastPath: state.currentPath,
+    };
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    } catch (_) {}
+  }, 300);
 }
 
 const savedPrefs = loadPrefs();
