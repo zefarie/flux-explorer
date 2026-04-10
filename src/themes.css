@@ -1,0 +1,150 @@
+/* ============================================
+   THEMES - Alternative color schemes
+   ============================================ */
+
+/* Gruvbox dark (default - already in style.css :root) */
+
+/* Catppuccin Mocha */
+[data-theme="catppuccin"] {
+  --bg-hard:    #11111b;
+  --bg:         #1e1e2e;
+  --bg1:        #313244;
+  --bg2:        #45475a;
+  --bg3:        #585b70;
+  --bg4:        #6c7086;
+  --fg:         #cdd6f4;
+  --fg1:        #bac2de;
+  --fg2:        #a6adc8;
+  --fg3:        #9399b2;
+  --fg4:        #7f849c;
+  --red:        #f38ba8;
+  --green:      #a6e3a1;
+  --yellow:     #f9e2af;
+  --blue:       #89b4fa;
+  --purple:     #cba6f7;
+  --aqua:       #94e2d5;
+  --orange:     #fab387;
+  --red-dim:    #eba0ac;
+  --green-dim:  #a6e3a1;
+  --yellow-dim: #f9e2af;
+  --blue-dim:   #74c7ec;
+  --purple-dim: #b4befe;
+  --aqua-dim:   #94e2d5;
+  --orange-dim: #fab387;
+}
+
+/* Nord */
+[data-theme="nord"] {
+  --bg-hard:    #2e3440;
+  --bg:         #3b4252;
+  --bg1:        #434c5e;
+  --bg2:        #4c566a;
+  --bg3:        #5e6779;
+  --bg4:        #6f7a8c;
+  --fg:         #eceff4;
+  --fg1:        #e5e9f0;
+  --fg2:        #d8dee9;
+  --fg3:        #c2c8d3;
+  --fg4:        #8a93a3;
+  --red:        #bf616a;
+  --green:      #a3be8c;
+  --yellow:     #ebcb8b;
+  --blue:       #81a1c1;
+  --purple:     #b48ead;
+  --aqua:       #88c0d0;
+  --orange:     #d08770;
+  --red-dim:    #bf616a;
+  --green-dim:  #a3be8c;
+  --yellow-dim: #ebcb8b;
+  --blue-dim:   #5e81ac;
+  --purple-dim: #b48ead;
+  --aqua-dim:   #8fbcbb;
+  --orange-dim: #d08770;
+}
+
+/* Tokyo Night */
+[data-theme="tokyo-night"] {
+  --bg-hard:    #16161e;
+  --bg:         #1a1b26;
+  --bg1:        #24283b;
+  --bg2:        #2f334d;
+  --bg3:        #414868;
+  --bg4:        #565f89;
+  --fg:         #c0caf5;
+  --fg1:        #a9b1d6;
+  --fg2:        #9aa5ce;
+  --fg3:        #7982a9;
+  --fg4:        #565f89;
+  --red:        #f7768e;
+  --green:      #9ece6a;
+  --yellow:     #e0af68;
+  --blue:       #7aa2f7;
+  --purple:     #bb9af7;
+  --aqua:       #7dcfff;
+  --orange:     #ff9e64;
+  --red-dim:    #db4b4b;
+  --green-dim:  #73daca;
+  --yellow-dim: #e0af68;
+  --blue-dim:   #2ac3de;
+  --purple-dim: #9d7cd8;
+  --aqua-dim:   #7dcfff;
+  --orange-dim: #ff9e64;
+}
+
+/* Solarized Dark */
+[data-theme="solarized"] {
+  --bg-hard:    #002b36;
+  --bg:         #073642;
+  --bg1:        #0a4452;
+  --bg2:        #14525f;
+  --bg3:        #1f5e6c;
+  --bg4:        #586e75;
+  --fg:         #fdf6e3;
+  --fg1:        #eee8d5;
+  --fg2:        #93a1a1;
+  --fg3:        #839496;
+  --fg4:        #657b83;
+  --red:        #dc322f;
+  --green:      #859900;
+  --yellow:     #b58900;
+  --blue:       #268bd2;
+  --purple:     #d33682;
+  --aqua:       #2aa198;
+  --orange:     #cb4b16;
+  --red-dim:    #cb4b16;
+  --green-dim:  #859900;
+  --yellow-dim: #b58900;
+  --blue-dim:   #268bd2;
+  --purple-dim: #6c71c4;
+  --aqua-dim:   #2aa198;
+  --orange-dim: #cb4b16;
+}
+
+/* Dracula */
+[data-theme="dracula"] {
+  --bg-hard:    #1e1f29;
+  --bg:         #282a36;
+  --bg1:        #383a4a;
+  --bg2:        #44475a;
+  --bg3:        #565969;
+  --bg4:        #6272a4;
+  --fg:         #f8f8f2;
+  --fg1:        #e8e8e2;
+  --fg2:        #d8d8d2;
+  --fg3:        #b8b8b2;
+  --fg4:        #6272a4;
+  --red:        #ff5555;
+  --green:      #50fa7b;
+  --yellow:     #f1fa8c;
+  --blue:       #6272a4;
+  --purple:     #bd93f9;
+  --aqua:       #8be9fd;
+  --orange:     #ffb86c;
+  --red-dim:    #ff5555;
+  --green-dim:  #50fa7b;
+  --yellow-dim: #f1fa8c;
+  --blue-dim:   #6272a4;
+  --purple-dim: #bd93f9;
+  --aqua-dim:   #8be9fd;
+  --orange-dim: #ffb86c;
+}
