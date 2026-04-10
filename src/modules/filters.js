@@ -21,16 +21,36 @@ export function setupFilters() {
   document.getElementById('filter-type').addEventListener('change', (e) => {
     state.filters.type = e.target.value;
     renderEntries();
+    updateBadge();
   });
   document.getElementById('filter-size').addEventListener('change', (e) => {
     state.filters.size = e.target.value;
     renderEntries();
+    updateBadge();
   });
   document.getElementById('filter-date').addEventListener('change', (e) => {
     state.filters.date = e.target.value;
     renderEntries();
+    updateBadge();
   });
   document.getElementById('filter-clear').addEventListener('click', clearFilters);
+
+  const btn = document.getElementById('btn-filter');
+  const popover = document.getElementById('filter-popover');
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    popover.classList.toggle('hidden');
+  });
+  document.addEventListener('click', (e) => {
+    if (popover.classList.contains('hidden')) return;
+    if (popover.contains(e.target) || btn.contains(e.target)) return;
+    popover.classList.add('hidden');
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !popover.classList.contains('hidden')) {
+      popover.classList.add('hidden');
+    }
+  });
 }
 
 function clearFilters() {
@@ -41,6 +61,21 @@ function clearFilters() {
   document.getElementById('filter-size').value = 'all';
   document.getElementById('filter-date').value = 'all';
   renderEntries();
+  updateBadge();
+}
+
+function updateBadge() {
+  const badge = document.getElementById('filter-badge');
+  const btn = document.getElementById('btn-filter');
+  const count = ['type', 'size', 'date'].filter(k => state.filters[k] !== 'all').length;
+  if (count > 0) {
+    badge.textContent = String(count);
+    badge.classList.remove('hidden');
+    btn.classList.add('active');
+  } else {
+    badge.classList.add('hidden');
+    btn.classList.remove('active');
+  }
 }
 
 export function applyFilters(entries) {
