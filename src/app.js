@@ -16,16 +16,21 @@ import { setupTabs, initTabs } from './modules/tabs.js';
 import { setupTitlebar } from './modules/titlebar.js';
 import { loadBookmarks } from './modules/bookmarks.js';
 import { setupProperties } from './modules/properties.js';
+import { setupHash } from './modules/hash.js';
 import { setupSidebarResize } from './modules/resize.js';
 import { setupMounts, loadMounts } from './modules/mounts.js';
 import { setupProgress } from './modules/progress.js';
 import { setupBatchRename } from './modules/batch-rename.js';
 import { setupOpenWith } from './modules/open-with.js';
 import { setupTrash, showTrash } from './modules/trash.js';
+import { setupTheme } from './modules/theme.js';
+import { setupPalette } from './modules/palette.js';
+import { setupRecents } from './modules/recent.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Titlebar
+  // Titlebar + theme
   setupTitlebar();
+  setupTheme();
 
   // Toolbar buttons
   document.getElementById('btn-back').addEventListener('click', goBack);
@@ -46,6 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupDialogs();
   setupPreview();
   setupProperties();
+  setupHash();
   setupTabs();
   setupSidebarResize();
   setupMounts();
@@ -53,6 +59,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupBatchRename();
   setupOpenWith();
   setupTrash();
+  setupPalette();
+  setupRecents();
   await loadQuickAccess();
   loadBookmarks();
   loadMounts();
@@ -67,9 +75,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Auto-refresh when filesystem changes
   listen('fs-changed', () => refresh());
 
-  // Initialize first tab and navigate
+  // Initialize first tab (restores session if available) and navigate
   const home = await invoke('get_home');
   const startPath = savedPrefs.lastPath || home;
-  await initTabs(startPath);
-  await navigateTo(startPath);
+  const restoredPath = await initTabs(startPath);
+  await navigateTo(restoredPath || startPath);
 });

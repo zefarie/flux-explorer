@@ -5,12 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Flux Explorer</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="themes.css">
 </head>
 <body>
   <!-- Titlebar -->
   <div id="titlebar" data-tauri-drag-region>
     <div class="titlebar-title" data-tauri-drag-region>Flux Explorer</div>
     <div class="titlebar-controls">
+      <select id="theme-select" class="titlebar-select" title="Theme">
+        <option value="gruvbox">Gruvbox</option>
+        <option value="catppuccin">Catppuccin</option>
+        <option value="nord">Nord</option>
+        <option value="tokyo-night">Tokyo Night</option>
+        <option value="solarized">Solarized</option>
+        <option value="dracula">Dracula</option>
+      </select>
       <button id="btn-minimize" class="titlebar-btn" title="Minimiser">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
@@ -86,6 +95,10 @@
       <div class="sidebar-section" id="bookmarks-section" style="display:none">
         <div class="sidebar-title">Favoris</div>
         <div id="bookmarks"></div>
+      </div>
+      <div class="sidebar-section" id="recents-section" style="display:none">
+        <div class="sidebar-title">R&eacute;cents</div>
+        <div id="recents"></div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-title">Disques</div>
@@ -201,6 +214,10 @@
       <kbd>Delete</kbd>
     </div>
     <div class="ctx-separator"></div>
+    <div class="ctx-item" data-action="hash">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>
+      <span>Calculer empreintes</span>
+    </div>
     <div class="ctx-item" data-action="properties">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       <span>Propri&eacute;t&eacute;s</span>
@@ -365,6 +382,25 @@
         <button class="dialog-btn dialog-btn-danger" id="trash-purge" disabled>Supprimer d&eacute;finitivement</button>
         <button class="dialog-btn dialog-btn-primary" id="trash-restore" disabled>Restaurer</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Hash Dialog -->
+  <div id="hash-overlay" class="overlay hidden">
+    <div class="dialog" style="min-width: 560px">
+      <div class="dialog-title" id="hash-title">Empreintes</div>
+      <div id="hash-content" class="hash-content"></div>
+      <div class="dialog-actions">
+        <button class="dialog-btn dialog-btn-primary" id="hash-close">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Command Palette -->
+  <div id="palette-overlay" class="overlay hidden">
+    <div class="palette">
+      <input type="text" id="palette-input" class="palette-input" placeholder="Tapez une commande ou un fichier..." spellcheck="false">
+      <div id="palette-list" class="palette-list"></div>
     </div>
   </div>
 

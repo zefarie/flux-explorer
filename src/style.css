@@ -101,7 +101,26 @@ body {
 .titlebar-controls {
   display: flex;
   gap: 2px;
+  align-items: center;
   -webkit-app-region: no-drag;
+}
+
+.titlebar-select {
+  background: var(--bg2);
+  border: 1px solid var(--bg3);
+  border-radius: 4px;
+  color: var(--fg2);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 6px;
+  margin-right: 8px;
+  cursor: pointer;
+  outline: none;
+  transition: all var(--transition);
+}
+.titlebar-select:hover {
+  background: var(--bg3);
+  color: var(--fg);
 }
 
 .titlebar-btn {
@@ -769,6 +788,39 @@ body {
   color: var(--fg3);
 }
 
+/* Git status indicators */
+.file-item.git-modified .file-name { color: var(--yellow); }
+.file-item.git-staged .file-name { color: var(--green); }
+.file-item.git-untracked .file-name { color: var(--orange); }
+.file-item.git-ignored { opacity: 0.5; }
+.file-item.git-modified::after,
+.file-item.git-staged::after,
+.file-item.git-untracked::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.view-grid .file-item.git-modified::after { background: var(--yellow); }
+.view-grid .file-item.git-staged::after { background: var(--green); }
+.view-grid .file-item.git-untracked::after { background: var(--orange); }
+
+/* Git branch in status bar */
+.git-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  background: var(--bg2);
+  border-radius: 3px;
+  color: var(--purple);
+  font-size: 10px;
+  margin-right: 8px;
+}
+
 /* Hidden files */
 .file-item.is-hidden {
   opacity: 0.5;
@@ -958,6 +1010,66 @@ body {
 .properties-content td:last-child {
   color: var(--fg1);
   word-break: break-all;
+}
+.properties-section {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--yellow);
+  margin: 14px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--bg3);
+}
+
+/* Hash dialog */
+.hash-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0 8px;
+}
+.hash-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hash-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--yellow);
+}
+.hash-value-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg0);
+  border: 1px solid var(--bg3);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+.hash-value {
+  flex: 1;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--fg1);
+  word-break: break-all;
+  background: transparent;
+}
+.hash-copy {
+  background: var(--bg2);
+  color: var(--fg2);
+  border: 1px solid var(--bg3);
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.hash-copy:hover {
+  background: var(--bg3);
+  color: var(--fg0);
 }
 
 /* ============================================
@@ -1489,4 +1601,79 @@ body {
 .dialog-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* ============================================
+   COMMAND PALETTE
+   ============================================ */
+.palette {
+  background: var(--bg1);
+  border: 1px solid var(--bg3);
+  border-radius: 12px;
+  width: 600px;
+  max-width: 90vw;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  animation: dialogIn 200ms ease;
+  overflow: hidden;
+  margin-top: 10vh;
+  align-self: flex-start;
+}
+.palette-input {
+  background: var(--bg);
+  border: none;
+  border-bottom: 1px solid var(--bg3);
+  padding: 14px 18px;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.palette-list {
+  overflow-y: auto;
+  flex: 1;
+}
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 18px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--fg2);
+  transition: background var(--transition);
+}
+.palette-item:hover { background: var(--bg2); }
+.palette-item.active {
+  background: var(--bg2);
+  color: var(--fg);
+  border-left: 3px solid var(--yellow);
+  padding-left: 15px;
+}
+.palette-type {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.palette-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-shortcut {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--bg);
+  border-radius: 3px;
+  color: var(--fg4);
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.palette-empty {
+  padding: 30px;
+  text-align: center;
+  color: var(--fg4);
+  font-size: 13px;
 }
