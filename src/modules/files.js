@@ -1,7 +1,7 @@
 import { state, invoke, savePrefs } from './state.js';
 import { escapeHtml, escapeAttr, formatSize, formatDate } from './utils.js';
 import { getFileIcon } from './icons.js';
-import { getThumbType, loadThumbnails } from './thumbnails.js';
+import { getThumbType, loadThumbnails, cleanupThumbnails } from './thumbnails.js';
 import { updateStatusBar } from './statusbar.js';
 import { navigateTo } from './navigation.js';
 
@@ -15,6 +15,16 @@ let currentEntries = [];
 let virtualActive = false;
 let lastVisibleRange = null;
 let scrollHandler = null;
+let thumbsDebounceTimer = null;
+let sortHeaderHandler = null;
+
+function scheduleLoadThumbnails() {
+  if (thumbsDebounceTimer) clearTimeout(thumbsDebounceTimer);
+  thumbsDebounceTimer = setTimeout(() => {
+    thumbsDebounceTimer = null;
+    loadThumbnails();
+  }, 80);
+}
 
 export function sortEntries(entries) {
   return [...entries].sort((a, b) => {
@@ -94,6 +104,10 @@ function cleanupVirtual() {
   const container = document.getElementById('file-container');
   container.style.paddingTop = '';
   container.style.paddingBottom = '';
+  if (thumbsDebounceTimer) {
+    clearTimeout(thumbsDebounceTimer);
+    thumbsDebounceTimer = null;
+  }
 }
 
 function getGridColumns() {
@@ -138,27 +152,32 @@ function renderVisibleItems() {
 
   container.style.paddingTop = (startRow * itemHeight) + 'px';
   container.style.paddingBottom = Math.max(0, (totalRows - endRow) * itemHeight) + 'px';
+  cleanupThumbnails();
   container.innerHTML = html;
 
-  loadThumbnails();
-  setupSortHeader(container);
+  scheduleLoadThumbnails();
 }
 
-function setupSortHeader(container) {
-  if (state.viewMode !== 'list') return;
-  container.querySelector('.list-header')?.addEventListener('click', (e) => {
-    const sortKey = e.target.closest('[data-sort]')?.dataset.sort;
-    if (sortKey) {
-      if (state.sortBy === sortKey) {
-        state.sortAsc = !state.sortAsc;
-      } else {
-        state.sortBy = sortKey;
-        state.sortAsc = true;
-      }
-      renderEntries();
-      savePrefs();
-    }
-  });
+function handleSortClick(e) {
+  const sortEl = e.target.closest('[data-sort]');
+  if (!sortEl) return;
+  if (!sortEl.closest('.list-header')) return;
+  const sortKey = sortEl.dataset.sort;
+  if (state.sortBy === sortKey) {
+    state.sortAsc = !state.sortAsc;
+  } else {
+    state.sortBy = sortKey;
+    state.sortAsc = true;
+  }
+  renderEntries();
+  savePrefs();
+}
+
+function ensureSortHandler() {
+  if (sortHeaderHandler) return;
+  const container = document.getElementById('file-container');
+  sortHeaderHandler = handleSortClick;
+  container.addEventListener('click', sortHeaderHandler);
 }
 
 export function renderEntries() {
@@ -202,11 +221,12 @@ export function renderEntries() {
     let html = '';
     if (state.viewMode === 'list') html += getListHeader();
     entries.forEach((entry, index) => { html += renderItemHtml(entry, index); });
+    cleanupThumbnails();
     container.innerHTML = html;
     loadThumbnails();
-    setupSortHeader(container);
   }
 
+  ensureSortHandler();
   updateStatusBar(entries.length);
 }
 
