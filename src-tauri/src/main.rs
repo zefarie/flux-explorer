@@ -1426,7 +1426,9 @@ fn get_mount_points() -> Result<Vec<MountPoint>, String> {
 
     let home = dirs_home();
     let mut mounts = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    let mut seen_mount = std::collections::HashSet::new();
+    let mut seen_device = std::collections::HashSet::new();
+    let mut has_root = false;
 
     for line in content.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -1438,18 +1440,45 @@ fn get_mount_points() -> Result<Vec<MountPoint>, String> {
 
         // Skip pseudo filesystems and irrelevant mounts
         if !device.starts_with('/') { continue; }
-        if matches!(fs_type, "proc" | "sysfs" | "tmpfs" | "devtmpfs" | "devpts" | "cgroup" | "cgroup2" | "pstore" | "bpf" | "tracefs" | "debugfs" | "mqueue" | "hugetlbfs" | "configfs" | "fusectl" | "fuse.gvfsd-fuse" | "autofs" | "binfmt_misc" | "rpc_pipefs" | "nfsd") { continue; }
-        if mount_point.starts_with("/snap/") || mount_point.starts_with("/var/lib/") || mount_point.starts_with("/run/") || mount_point.starts_with("/boot/efi") { continue; }
-        if mount_point == "/" && !mounts.is_empty() { continue; }
+        if matches!(fs_type, "proc" | "sysfs" | "tmpfs" | "devtmpfs" | "devpts" | "cgroup" | "cgroup2" | "pstore" | "bpf" | "tracefs" | "debugfs" | "mqueue" | "hugetlbfs" | "configfs" | "fusectl" | "fuse.gvfsd-fuse" | "autofs" | "binfmt_misc" | "rpc_pipefs" | "nfsd" | "squashfs" | "overlay") { continue; }
+
+        // Skip system mount points (typical Linux FHS that users don't browse manually)
+        if mount_point.starts_with("/snap/")
+            || mount_point.starts_with("/var/")
+            || mount_point.starts_with("/run/")
+            || mount_point.starts_with("/sys/")
+            || mount_point.starts_with("/proc/")
+            || mount_point.starts_with("/dev/")
+            || mount_point == "/boot"
+            || mount_point.starts_with("/boot/")
+            || mount_point == "/efi"
+            || mount_point.starts_with("/efi/")
+            || mount_point == "/root"
+            || mount_point.starts_with("/root/")
+            || mount_point == "/srv"
+            || mount_point.starts_with("/srv/")
+            || mount_point == "/tmp"
+            || mount_point.starts_with("/tmp/")
+        { continue; }
+
+        let is_root = mount_point == "/";
+        if is_root {
+            if has_root { continue; }
+            has_root = true;
+        }
 
         // Dedupe by mount point
-        if !seen.insert(mount_point.to_string()) { continue; }
+        if !seen_mount.insert(mount_point.to_string()) { continue; }
 
         // Get name (last segment) and detect removable (heuristic: under /mnt, /media, /run/media)
         let is_removable = mount_point.starts_with("/mnt/") || mount_point.starts_with("/media/") || mount_point.starts_with("/run/media/");
 
-        // Skip mounts under home that are not removable
-        if !is_removable && mount_point != "/" && mount_point.starts_with(&home) {
+        // Dedupe by device for non-removable mounts: if same physical device already shown,
+        // skip (handles btrfs subvolumes which appear once per subvol).
+        if !is_removable && !seen_device.insert(device.to_string()) { continue; }
+
+        // Skip mounts under home that are not removable (e.g. user-mounted FUSE)
+        if !is_removable && !is_root && mount_point.starts_with(&home) {
             continue;
         }
 
