@@ -3,8 +3,29 @@ import { state, invoke } from './state.js';
 export const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif'];
 export const VIDEO_EXTS = ['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', 'wmv'];
 
+// LRU cache for in-memory thumbnails (data URLs)
+const MAX_CACHE_ENTRIES = 200;
 const thumbCache = new Map();
+
+function cacheGet(key) {
+  if (!thumbCache.has(key)) return null;
+  const value = thumbCache.get(key);
+  thumbCache.delete(key);
+  thumbCache.set(key, value);
+  return value;
+}
+
+function cacheSet(key, value) {
+  if (thumbCache.has(key)) thumbCache.delete(key);
+  thumbCache.set(key, value);
+  while (thumbCache.size > MAX_CACHE_ENTRIES) {
+    const oldest = thumbCache.keys().next().value;
+    thumbCache.delete(oldest);
+  }
+}
+
 let thumbObserver = null;
+let observedItems = new Set();
 
 export function getThumbType(entry) {
   if (entry.is_dir) return null;
@@ -13,8 +34,17 @@ export function getThumbType(entry) {
   return null;
 }
 
+export function cleanupThumbnails() {
+  if (thumbObserver) {
+    for (const item of observedItems) thumbObserver.unobserve(item);
+    thumbObserver.disconnect();
+    thumbObserver = null;
+  }
+  observedItems.clear();
+}
+
 export function loadThumbnails() {
-  if (thumbObserver) thumbObserver.disconnect();
+  cleanupThumbnails();
 
   const items = document.querySelectorAll('.file-item[data-thumb]');
   if (items.length === 0) return;
@@ -39,8 +69,9 @@ export function loadThumbnails() {
     if (!iconEl) return;
 
     const cacheKey = `${path}:${size}`;
-    if (thumbCache.has(cacheKey)) {
-      applyThumb(iconEl, thumbCache.get(cacheKey));
+    const cached = cacheGet(cacheKey);
+    if (cached) {
+      applyThumb(iconEl, cached);
       return;
     }
 
@@ -52,7 +83,7 @@ export function loadThumbnails() {
       } else {
         dataUrl = await invoke('get_video_thumbnail', { path, size });
       }
-      thumbCache.set(cacheKey, dataUrl);
+      cacheSet(cacheKey, dataUrl);
       if (item.isConnected) applyThumb(iconEl, dataUrl);
     } catch (_) {}
     loading--;
@@ -64,12 +95,16 @@ export function loadThumbnails() {
       if (entry.isIntersecting) {
         queue.push(entry.target);
         thumbObserver.unobserve(entry.target);
+        observedItems.delete(entry.target);
       }
     }
     processQueue();
   }, { root: document.getElementById('file-area'), rootMargin: '100px' });
 
-  items.forEach(item => thumbObserver.observe(item));
+  items.forEach(item => {
+    thumbObserver.observe(item);
+    observedItems.add(item);
+  });
 }
 
 function applyThumb(iconEl, dataUrl) {
