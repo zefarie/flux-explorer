@@ -9,6 +9,8 @@ import { showBatchRename } from './batch-rename.js';
 import { showTrash } from './trash.js';
 import { createTab, closeTab, getActiveTab, getTabCount } from './tabs.js';
 import { openPreview } from './preview.js';
+import { showDuplicates } from './duplicates.js';
+import { showDiskUsage } from './disk-usage.js';
 
 const ACTIONS = [
   { id: 'new-folder', label: 'Nouveau dossier', shortcut: 'Ctrl+Shift+N', icon: 'folder-plus', run: () => showNewFolderDialog() },
@@ -27,6 +29,8 @@ const ACTIONS = [
   { id: 'delete', label: 'Supprimer la selection', shortcut: 'Delete', icon: 'trash', run: () => { if (state.selected.size > 0) showDeleteDialog(); } },
   { id: 'properties', label: 'Proprietes', icon: 'info', run: () => { if (state.selected.size === 1) showProperties([...state.selected][0]); } },
   { id: 'open-with', label: 'Ouvrir avec...', icon: 'app', run: () => { if (state.selected.size === 1) showOpenWith([...state.selected][0]); } },
+  { id: 'duplicates', label: 'Detecter les doublons', icon: 'copy', run: () => showDuplicates() },
+  { id: 'disk-usage', label: 'Visualiser l\'espace disque', icon: 'disk', run: () => showDiskUsage() },
 ];
 
 let palette = [];
