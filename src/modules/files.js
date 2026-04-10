@@ -5,6 +5,7 @@ import { getThumbType, loadThumbnails, cleanupThumbnails } from './thumbnails.js
 import { updateStatusBar } from './statusbar.js';
 import { navigateTo } from './navigation.js';
 import { getGitClass } from './git.js';
+import { applyFilters } from './filters.js';
 
 // Virtual scroll config
 const VIRTUAL_THRESHOLD = 500;
@@ -193,6 +194,7 @@ export function renderEntries() {
     entries = entries.filter(e => e.name.toLowerCase().includes(q));
   }
 
+  entries = applyFilters(entries);
   entries = sortEntries(entries);
   currentEntries = entries;
 
