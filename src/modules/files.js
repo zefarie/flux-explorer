@@ -4,6 +4,7 @@ import { getFileIcon } from './icons.js';
 import { getThumbType, loadThumbnails, cleanupThumbnails } from './thumbnails.js';
 import { updateStatusBar } from './statusbar.js';
 import { navigateTo } from './navigation.js';
+import { getGitClass } from './git.js';
 
 // Virtual scroll config
 const VIRTUAL_THRESHOLD = 500;
@@ -55,11 +56,12 @@ function renderItemHtml(entry, index) {
   const hiddenClass = entry.is_hidden ? ' is-hidden' : '';
   const symlinkClass = entry.is_symlink ? ' is-symlink' : '';
   const cutClass = (state.clipboard.action === 'cut' && state.clipboard.paths.includes(entry.path)) ? ' is-cut' : '';
+  const gitClass = getGitClass(entry.path);
   const thumbType = getThumbType(entry);
   const thumbAttr = thumbType ? ` data-thumb="${thumbType}"` : '';
 
   if (state.viewMode === 'grid') {
-    return `<div class="file-item${selectedClass}${hiddenClass}${symlinkClass}${cutClass}"
+    return `<div class="file-item${selectedClass}${hiddenClass}${symlinkClass}${cutClass}${gitClass}"
                   data-path="${escapeAttr(entry.path)}"
                   data-index="${index}"
                   data-is-dir="${entry.is_dir}"
@@ -68,7 +70,7 @@ function renderItemHtml(entry, index) {
       <div class="file-name">${escapeHtml(entry.name)}</div>
     </div>`;
   } else {
-    return `<div class="file-item${selectedClass}${hiddenClass}${symlinkClass}${cutClass}"
+    return `<div class="file-item${selectedClass}${hiddenClass}${symlinkClass}${cutClass}${gitClass}"
                   data-path="${escapeAttr(entry.path)}"
                   data-index="${index}"
                   data-is-dir="${entry.is_dir}"

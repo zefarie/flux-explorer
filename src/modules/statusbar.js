@@ -1,9 +1,19 @@
 import { state } from './state.js';
 import { formatSize } from './utils.js';
+import { getGitBranch, isGitRepo } from './git.js';
 
 export function updateStatusBar(count) {
   const total = count ?? state.entries.length;
   document.getElementById('status-count').textContent = `${total} \u00e9l\u00e9ment${total !== 1 ? 's' : ''}`;
+
+  // Update git branch indicator
+  const pathEl = document.getElementById('status-path');
+  if (isGitRepo()) {
+    const branch = getGitBranch();
+    pathEl.innerHTML = `<span class="git-branch">\u23cf ${branch}</span>${state.currentPath}`;
+  } else {
+    pathEl.textContent = state.currentPath;
+  }
 
   const selCount = state.selected.size;
   const selEl = document.getElementById('status-selected');
@@ -25,5 +35,4 @@ export function updateStatusBar(count) {
     selEl.classList.add('hidden');
   }
 
-  document.getElementById('status-path').textContent = state.currentPath;
 }

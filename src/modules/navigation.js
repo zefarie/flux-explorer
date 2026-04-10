@@ -4,6 +4,8 @@ import { renderEntries } from './files.js';
 import { updateSidebar } from './sidebar.js';
 import { updateStatusBar } from './statusbar.js';
 import { updateActiveTabName } from './tabs.js';
+import { loadGitStatus } from './git.js';
+import { trackVisit } from './recent.js';
 
 export async function navigateTo(path, addToHistory = true) {
   showLoading(true);
@@ -22,6 +24,12 @@ export async function navigateTo(path, addToHistory = true) {
       state.historyIndex = state.history.length - 1;
     }
 
+    // Load git status (non-blocking, will refresh icons after)
+    loadGitStatus(path).then(() => {
+      renderEntries();
+      updateStatusBar();
+    });
+
     renderBreadcrumb();
     renderEntries();
     updateNavButtons();
@@ -29,6 +37,7 @@ export async function navigateTo(path, addToHistory = true) {
     updateStatusBar();
     savePrefs();
     updateActiveTabName();
+    trackVisit(path);
     invoke('watch_directory', { path }).catch(() => {});
   } catch (err) {
     showToast(err, 'error');
