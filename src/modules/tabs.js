@@ -21,7 +21,8 @@ function createTabState(path) {
 
 function saveTabToState(tab) {
   tab.currentPath = state.currentPath;
-  tab.entries = state.entries;
+  // Don't keep entries in RAM for inactive tabs - they will be re-fetched on switch
+  tab.entries = [];
   tab.selected = new Set(state.selected);
   tab.lastSelected = state.lastSelected;
   tab.history = [...state.history];
@@ -80,7 +81,7 @@ export async function closeTab(tabId) {
 export async function switchTab(tabId) {
   if (tabId === activeTabId) return;
 
-  // Save current
+  // Save current (drops entries to free RAM)
   const current = getActiveTab();
   if (current) saveTabToState(current);
 
@@ -91,21 +92,9 @@ export async function switchTab(tabId) {
   restoreTabFromState(tab);
   renderTabs();
 
-  if (tab.entries.length > 0) {
-    // Already loaded, just re-render without re-fetching
-    const { renderEntries } = await import('./files.js');
-    const { updateStatusBar } = await import('./statusbar.js');
-    const { updateNavButtons } = await import('./navigation.js');
-
-    renderEntries();
-    updateNavButtons();
-    updateStatusBar();
-
-    document.getElementById('search-input').value = state.searchQuery;
-    invoke('watch_directory', { path: state.currentPath }).catch(() => {});
-  } else {
-    await navigateTo(tab.currentPath);
-  }
+  // Always re-fetch (entries were dropped) - but skip history push
+  await navigateTo(tab.currentPath, false);
+  document.getElementById('search-input').value = state.searchQuery;
 }
 
 export function renderTabs() {
