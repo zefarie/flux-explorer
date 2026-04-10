@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use base64::Engine;
+use exif;
 use image::imageops::FilterType;
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, Debouncer, notify::RecommendedWatcher};
@@ -1651,6 +1652,174 @@ fn dirs_home() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/home".to_string())
 }
 
+#[derive(Serialize)]
+struct ExifData {
+    tags: Vec<(String, String)>,
+}
+
+#[tauri::command]
+fn get_exif(path: String) -> Result<ExifData, String> {
+    let file = fs::File::open(&path).map_err(|e| format!("Cannot open: {}", e))?;
+    let mut bufreader = std::io::BufReader::new(&file);
+    let exifreader = exif::Reader::new();
+    let exif = exifreader.read_from_container(&mut bufreader)
+        .map_err(|e| format!("No EXIF data: {}", e))?;
+
+    let mut tags = Vec::new();
+    let interesting = [
+        ("Date prise", exif::Tag::DateTimeOriginal),
+        ("Appareil", exif::Tag::Model),
+        ("Marque", exif::Tag::Make),
+        ("Objectif", exif::Tag::LensModel),
+        ("Focale", exif::Tag::FocalLength),
+        ("Ouverture", exif::Tag::FNumber),
+        ("Vitesse", exif::Tag::ExposureTime),
+        ("ISO", exif::Tag::PhotographicSensitivity),
+        ("Largeur", exif::Tag::PixelXDimension),
+        ("Hauteur", exif::Tag::PixelYDimension),
+        ("Orientation", exif::Tag::Orientation),
+        ("Flash", exif::Tag::Flash),
+        ("Logiciel", exif::Tag::Software),
+        ("Latitude", exif::Tag::GPSLatitude),
+        ("Longitude", exif::Tag::GPSLongitude),
+    ];
+
+    for (label, tag) in &interesting {
+        if let Some(field) = exif.get_field(*tag, exif::In::PRIMARY) {
+            let value = field.display_value().with_unit(&exif).to_string();
+            if !value.is_empty() {
+                tags.push((label.to_string(), value));
+            }
+        }
+    }
+
+    Ok(ExifData { tags })
+}
+
+#[derive(Serialize)]
+struct FileHashes {
+    md5: String,
+    sha1: String,
+    sha256: String,
+}
+
+#[tauri::command]
+async fn compute_hashes(path: String) -> Result<FileHashes, String> {
+    tokio::task::spawn_blocking(move || {
+        use md5::{Md5, Digest as Md5Digest};
+        use sha1::Sha1;
+        use sha2::Sha256;
+
+        let mut file = fs::File::open(&path).map_err(|e| format!("Cannot open: {}", e))?;
+        let mut md5 = Md5::new();
+        let mut sha1 = Sha1::new();
+        let mut sha256 = Sha256::new();
+        let mut buf = vec![0u8; 64 * 1024];
+
+        loop {
+            use std::io::Read;
+            let n = file.read(&mut buf).map_err(|e| format!("Read: {}", e))?;
+            if n == 0 { break; }
+            md5.update(&buf[..n]);
+            sha1.update(&buf[..n]);
+            sha256.update(&buf[..n]);
+        }
+
+        Ok(FileHashes {
+            md5: format!("{:x}", md5.finalize()),
+            sha1: format!("{:x}", sha1.finalize()),
+            sha256: format!("{:x}", sha256.finalize()),
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(Serialize)]
+struct GitStatus {
+    is_repo: bool,
+    branch: String,
+    statuses: std::collections::HashMap<String, String>,
+}
+
+#[tauri::command]
+fn get_git_status(path: String) -> Result<GitStatus, String> {
+    // Find the git root by walking up
+    let mut current = PathBuf::from(&path);
+    let mut git_root = None;
+    loop {
+        if current.join(".git").exists() {
+            git_root = Some(current.clone());
+            break;
+        }
+        if !current.pop() { break; }
+    }
+
+    let root = match git_root {
+        Some(r) => r,
+        None => return Ok(GitStatus { is_repo: false, branch: String::new(), statuses: Default::default() }),
+    };
+
+    // Get branch
+    let branch = Command::new("git")
+        .args(["-C", &root.to_string_lossy(), "branch", "--show-current"])
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() { String::from_utf8(o.stdout).ok() } else { None })
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+
+    // Get statuses (porcelain v1)
+    let output = Command::new("git")
+        .args(["-C", &root.to_string_lossy(), "status", "--porcelain", "--ignored"])
+        .output()
+        .map_err(|e| format!("git status failed: {}", e))?;
+
+    if !output.status.success() {
+        return Ok(GitStatus { is_repo: true, branch, statuses: Default::default() });
+    }
+
+    let mut statuses = std::collections::HashMap::new();
+    let raw = String::from_utf8_lossy(&output.stdout);
+
+    for line in raw.lines() {
+        if line.len() < 4 { continue; }
+        let xy = &line[..2];
+        let file = &line[3..];
+
+        let status = match xy {
+            "!!" => "ignored",
+            "??" => "untracked",
+            s if s.starts_with('M') || s.starts_with('A') || s.starts_with('R') || s.starts_with('C') => "staged",
+            s if s.contains('M') || s.contains('D') => "modified",
+            _ => "modified",
+        };
+
+        // Convert file path to absolute
+        let abs_path = root.join(file);
+        statuses.insert(abs_path.to_string_lossy().to_string(), status.to_string());
+
+        // Also mark all parent dirs of modified files (so dirs containing changes are highlighted)
+        if !matches!(status, "ignored") {
+            let mut p = abs_path.parent().map(|p| p.to_path_buf());
+            while let Some(parent) = p {
+                if parent == root || parent.starts_with(&root) {
+                    let key = parent.to_string_lossy().to_string();
+                    if !statuses.contains_key(&key) {
+                        statuses.insert(key, "modified".to_string());
+                    }
+                    if parent == root { break; }
+                    p = parent.parent().map(|p| p.to_path_buf());
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(GitStatus { is_repo: true, branch, statuses })
+}
+
 #[tauri::command]
 fn get_disk_info(path: String) -> Result<DiskInfo, String> {
     use std::mem::MaybeUninit;
@@ -1745,6 +1914,9 @@ fn main() {
             restore_trash_items,
             purge_trash_items,
             empty_trash,
+            get_git_status,
+            get_exif,
+            compute_hashes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Flux Explorer");
