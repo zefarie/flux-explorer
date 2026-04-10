@@ -9,6 +9,7 @@ import { showProperties } from './properties.js';
 import { extractHere, createArchive, isArchive } from './archives.js';
 import { showBatchRename } from './batch-rename.js';
 import { showOpenWith } from './open-with.js';
+import { showHash } from './hash.js';
 
 export function setupContextMenu() {
   const menu = document.getElementById('context-menu');
@@ -52,6 +53,9 @@ export function setupContextMenu() {
 
     // Open with: only for files (not dirs)
     menu.querySelector('[data-action="open-with"]').classList.toggle('hidden', !hasTarget || isDir);
+
+    // Hash: only for files
+    menu.querySelector('[data-action="hash"]').classList.toggle('hidden', !hasTarget || isDir);
 
     // Extract here: only for archive files
     const archiveExts = ['zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'zst', '7z', 'rar'];
@@ -139,6 +143,9 @@ function handleContextAction(action) {
       break;
     case 'batch-rename':
       if (state.selected.size >= 2) showBatchRename([...state.selected]);
+      break;
+    case 'hash':
+      if (state.contextTarget) showHash(state.contextTarget);
       break;
   }
 }
