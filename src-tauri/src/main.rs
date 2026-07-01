@@ -83,10 +83,15 @@ fn list_directory_sync(path: String, show_hidden: bool) -> Result<Vec<FileEntry>
         };
 
         let is_symlink = metadata.is_symlink();
-        let real_metadata = if is_symlink {
-            fs::metadata(&path_buf).unwrap_or(metadata.clone())
+        // Resolve target dir/size for symlinks; otherwise reuse the entry's own
+        // metadata directly to avoid two extra clones per file.
+        let (is_dir, size) = if is_symlink {
+            match fs::metadata(&path_buf) {
+                Ok(real) => (real.is_dir(), if real.is_dir() { 0 } else { real.len() }),
+                Err(_) => (false, metadata.len()),
+            }
         } else {
-            metadata.clone()
+            (metadata.is_dir(), if metadata.is_dir() { 0 } else { metadata.len() })
         };
 
         let modified = metadata
@@ -106,22 +111,20 @@ fn list_directory_sync(path: String, show_hidden: bool) -> Result<Vec<FileEntry>
         entries.push(FileEntry {
             name,
             path: path_buf.to_string_lossy().to_string(),
-            is_dir: real_metadata.is_dir(),
+            is_dir,
             is_hidden,
             is_symlink,
-            size: if real_metadata.is_dir() { 0 } else { real_metadata.len() },
+            size,
             modified,
             extension,
             permissions,
         });
     }
 
-    // Sort: directories first, then alphabetically (case-insensitive)
-    entries.sort_by(|a, b| {
-        b.is_dir
-            .cmp(&a.is_dir)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
+    // Sort: directories first, then alphabetically (case-insensitive).
+    // sort_by_cached_key computes each lowercase key once instead of on every
+    // comparison (avoids ~2*n*log(n) string allocations on large directories).
+    entries.sort_by_cached_key(|e| (!e.is_dir, e.name.to_lowercase()));
 
     Ok(entries)
 }
@@ -358,7 +361,7 @@ fn copy_file_progress(
 
     let mut input = fs::File::open(src).map_err(|e| format!("Open {}: {}", src.display(), e))?;
     let mut output = fs::File::create(dst).map_err(|e| format!("Create {}: {}", dst.display(), e))?;
-    let mut buf = vec![0u8; 64 * 1024];
+    let mut buf = vec![0u8; 1024 * 1024];
     let mut last_emit = Instant::now();
 
     loop {
@@ -825,7 +828,13 @@ fn write_cached_thumb(path: &str, size: u32, jpeg_data: &[u8]) {
 }
 
 #[tauri::command]
-fn get_thumbnail(path: String, size: u32) -> Result<String, String> {
+async fn get_thumbnail(path: String, size: u32) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || get_thumbnail_sync(path, size))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_thumbnail_sync(path: String, size: u32) -> Result<String, String> {
     if let Some(cached) = read_cached_thumb(&path, size) {
         return Ok(cached);
     }
@@ -845,7 +854,13 @@ fn get_thumbnail(path: String, size: u32) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn get_video_thumbnail(path: String, size: u32) -> Result<String, String> {
+async fn get_video_thumbnail(path: String, size: u32) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || get_video_thumbnail_sync(path, size))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_video_thumbnail_sync(path: String, size: u32) -> Result<String, String> {
     if let Some(cached) = read_cached_thumb(&path, size) {
         return Ok(cached);
     }
@@ -875,7 +890,13 @@ fn get_video_thumbnail(path: String, size: u32) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn get_pdf_preview(path: String) -> Result<String, String> {
+async fn get_pdf_preview(path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || get_pdf_preview_sync(path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_pdf_preview_sync(path: String) -> Result<String, String> {
     // Use pdftoppm (poppler-utils) to render first page as JPEG
     let output = Command::new("pdftoppm")
         .args([
@@ -1112,7 +1133,13 @@ struct TrashItem {
 }
 
 #[tauri::command]
-fn list_trash() -> Result<Vec<TrashItem>, String> {
+async fn list_trash() -> Result<Vec<TrashItem>, String> {
+    tokio::task::spawn_blocking(list_trash_sync)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn list_trash_sync() -> Result<Vec<TrashItem>, String> {
     use trash::os_limited;
     let items = os_limited::list().map_err(|e| format!("Cannot list trash: {}", e))?;
 
@@ -1184,7 +1211,13 @@ struct DesktopApp {
 }
 
 #[tauri::command]
-fn list_applications() -> Result<Vec<DesktopApp>, String> {
+async fn list_applications() -> Result<Vec<DesktopApp>, String> {
+    tokio::task::spawn_blocking(list_applications_sync)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn list_applications_sync() -> Result<Vec<DesktopApp>, String> {
     let mut apps = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -1420,7 +1453,13 @@ struct MountPoint {
 }
 
 #[tauri::command]
-fn get_mount_points() -> Result<Vec<MountPoint>, String> {
+async fn get_mount_points() -> Result<Vec<MountPoint>, String> {
+    tokio::task::spawn_blocking(get_mount_points_sync)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_mount_points_sync() -> Result<Vec<MountPoint>, String> {
     let content = fs::read_to_string("/proc/mounts")
         .map_err(|e| format!("Cannot read /proc/mounts: {}", e))?;
 
@@ -1772,7 +1811,13 @@ struct GitStatus {
 }
 
 #[tauri::command]
-fn get_git_status(path: String) -> Result<GitStatus, String> {
+async fn get_git_status(path: String) -> Result<GitStatus, String> {
+    tokio::task::spawn_blocking(move || get_git_status_sync(path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_git_status_sync(path: String) -> Result<GitStatus, String> {
     // Find the git root by walking up
     let mut current = PathBuf::from(&path);
     let mut git_root = None;
