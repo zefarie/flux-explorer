@@ -8,10 +8,15 @@ import { getGitClass } from './git.js';
 import { applyFilters } from './filters.js';
 
 // Virtual scroll config
-const VIRTUAL_THRESHOLD = 500;
+const VIRTUAL_THRESHOLD = 200;
 const LIST_ITEM_HEIGHT = 37;
 const GRID_ITEM_HEIGHT = 130;
 const BUFFER = 10;
+
+// Shared collator: natural ordering (file2 before file10), case/accent
+// insensitive. Reused across comparisons instead of allocating lowercased
+// strings on every call.
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 let currentEntries = [];
 let virtualActive = false;
@@ -35,7 +40,7 @@ export function sortEntries(entries) {
     let cmp = 0;
     switch (state.sortBy) {
       case 'name':
-        cmp = a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+        cmp = collator.compare(a.name, b.name);
         break;
       case 'size':
         cmp = a.size - b.size;
@@ -44,7 +49,7 @@ export function sortEntries(entries) {
         cmp = a.modified - b.modified;
         break;
       case 'type':
-        cmp = a.extension.localeCompare(b.extension) || a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+        cmp = collator.compare(a.extension, b.extension) || collator.compare(a.name, b.name);
         break;
     }
     return state.sortAsc ? cmp : -cmp;

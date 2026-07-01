@@ -7,42 +7,120 @@ import { updateActiveTabName } from './tabs.js';
 import { loadGitStatus } from './git.js';
 import { trackVisit } from './recent.js';
 
-export async function navigateTo(path, addToHistory = true) {
-  showLoading(true);
-  try {
-    const entries = await invoke('list_directory', { path, showHidden: state.showHidden });
-    state.entries = entries;
-    state.currentPath = path;
-    state.selected.clear();
-    state.lastSelected = null;
-    state.searchQuery = '';
-    document.getElementById('search-input').value = '';
+// --- Directory cache (stale-while-revalidate) ---
+// Keeps the last N listings so back/forward and tab switches paint instantly,
+// then a background re-fetch corrects the view only if the contents changed.
+const DIR_CACHE_MAX = 40;
+const dirCache = new Map();    // path -> entries array
+const scrollCache = new Map(); // path -> scrollTop
 
-    if (addToHistory) {
-      state.history = state.history.slice(0, state.historyIndex + 1);
-      state.history.push(path);
-      state.historyIndex = state.history.length - 1;
+function dirCachePut(path, entries) {
+  if (dirCache.has(path)) dirCache.delete(path);
+  dirCache.set(path, entries);
+  while (dirCache.size > DIR_CACHE_MAX) {
+    dirCache.delete(dirCache.keys().next().value);
+  }
+}
+
+export function invalidateDirCache(path) {
+  if (path) dirCache.delete(path);
+  else dirCache.clear();
+}
+
+function entriesEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (x.path !== y.path || x.modified !== y.modified || x.size !== y.size || x.is_dir !== y.is_dir) {
+      return false;
     }
+  }
+  return true;
+}
 
-    // Load git status (non-blocking, will refresh icons after)
-    loadGitStatus(path).then(() => {
-      renderEntries();
-      updateStatusBar();
-    });
+function restoreScroll(path) {
+  const fileArea = document.getElementById('file-area');
+  if (!fileArea) return;
+  const st = scrollCache.get(path) || 0;
+  requestAnimationFrame(() => { fileArea.scrollTop = st; });
+}
 
-    renderBreadcrumb();
+export async function navigateTo(path, addToHistory = true) {
+  // Remember the scroll position of the directory we're leaving.
+  const fileArea = document.getElementById('file-area');
+  if (fileArea && state.currentPath) {
+    scrollCache.set(state.currentPath, fileArea.scrollTop);
+  }
+
+  // Enter the new path: reset selection/search, update history + chrome.
+  state.currentPath = path;
+  state.selected.clear();
+  state.lastSelected = null;
+  state.searchQuery = '';
+  document.getElementById('search-input').value = '';
+
+  if (addToHistory) {
+    state.history = state.history.slice(0, state.historyIndex + 1);
+    state.history.push(path);
+    state.historyIndex = state.history.length - 1;
+  }
+
+  renderBreadcrumb();
+  updateNavButtons();
+  updateActiveTabName();
+
+  const cached = dirCache.get(path);
+
+  // 1. Paint instantly from cache when available (stale-while-revalidate).
+  if (cached !== undefined) {
+    state.entries = cached;
     renderEntries();
-    updateNavButtons();
     updateSidebar();
     updateStatusBar();
-    savePrefs();
-    updateActiveTabName();
+    restoreScroll(path);
+  } else {
+    showLoading(true);
+  }
+
+  // 2. Fetch the fresh listing in the background.
+  try {
+    const entries = await invoke('list_directory', { path, showHidden: state.showHidden });
+
+    // A newer navigation may have superseded this one - bail if so.
+    if (state.currentPath !== path) return;
+
+    const changed = cached === undefined || !entriesEqual(cached, entries);
+    dirCachePut(path, entries);
+
+    if (changed) {
+      state.entries = entries;
+      renderEntries();
+      updateSidebar();
+      updateStatusBar();
+      if (cached === undefined) restoreScroll(path);
+    }
+
     trackVisit(path);
+    savePrefs();
+
+    // Refresh git status; only re-render when it actually changed.
+    loadGitStatus(path).then(({ changed: gitChanged }) => {
+      if (state.currentPath === path && gitChanged) {
+        renderEntries();
+        updateStatusBar();
+      }
+    });
+
     invoke('watch_directory', { path }).catch(() => {});
   } catch (err) {
-    showToast(err, 'error');
+    if (state.currentPath === path) {
+      dirCache.delete(path);
+      showToast(err, 'error');
+    }
+  } finally {
+    if (state.currentPath === path) showLoading(false);
   }
-  showLoading(false);
 }
 
 export async function goBack() {

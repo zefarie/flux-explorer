@@ -109,5 +109,7 @@ export function loadThumbnails() {
 
 function applyThumb(iconEl, dataUrl) {
   iconEl.className = 'file-icon thumb-loaded';
-  iconEl.innerHTML = `<img src="${dataUrl}" alt="">`;
+  // decoding="async" keeps image decode off the main thread so scrolling
+  // stays smooth while thumbnails paint in.
+  iconEl.innerHTML = `<img src="${dataUrl}" alt="" decoding="async">`;
 }
