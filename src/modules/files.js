@@ -61,47 +61,47 @@ export function getCurrentEntries() {
 
 function renderItemHtml(entry, index) {
   const iconInfo = getFileIcon(entry);
-  const selectedClass = state.selected.has(entry.path) ? ' selected' : '';
-  const hiddenClass = entry.is_hidden ? ' is-hidden' : '';
-  const symlinkClass = entry.is_symlink ? ' is-symlink' : '';
-  const cutClass = (state.clipboard.action === 'cut' && state.clipboard.paths.includes(entry.path)) ? ' is-cut' : '';
-  const gitClass = getGitClass(entry.path);
+  let cls = 'file-item';
+  if (state.selected.has(entry.path)) cls += ' selected';
+  if (entry.is_hidden) cls += ' is-hidden';
+  if (entry.is_symlink) cls += ' is-symlink';
+  if (state.clipboard.action === 'cut' && state.clipboard.paths.includes(entry.path)) cls += ' is-cut';
+  cls += getGitClass(entry.path);
+
   const thumbType = getThumbType(entry);
-  const thumbAttr = thumbType ? ` data-thumb="${thumbType}"` : '';
+  const open = `<div class="${cls}"
+                  data-path="${escapeAttr(entry.path)}"
+                  data-index="${index}"
+                  data-is-dir="${entry.is_dir}"
+                  draggable="true"${thumbType ? ` data-thumb="${thumbType}"` : ''}>`;
+  const icon = `<div class="file-icon ${iconInfo.colorClass}">${iconInfo.svg}</div>`;
+  const name = `<div class="file-name">${escapeHtml(entry.name)}</div>`;
 
   if (state.viewMode === 'grid') {
-    return `<div class="file-item${selectedClass}${hiddenClass}${symlinkClass}${cutClass}${gitClass}"
-                  data-path="${escapeAttr(entry.path)}"
-                  data-index="${index}"
-                  data-is-dir="${entry.is_dir}"
-                  draggable="true"${thumbAttr}>
-      <div class="file-icon ${iconInfo.colorClass}">${iconInfo.svg}</div>
-      <div class="file-name">${escapeHtml(entry.name)}</div>
-    </div>`;
-  } else {
-    return `<div class="file-item${selectedClass}${hiddenClass}${symlinkClass}${cutClass}${gitClass}"
-                  data-path="${escapeAttr(entry.path)}"
-                  data-index="${index}"
-                  data-is-dir="${entry.is_dir}"
-                  draggable="true"${thumbAttr}>
-      <div class="file-name-col">
-        <div class="file-icon ${iconInfo.colorClass}">${iconInfo.svg}</div>
-        <div class="file-name">${escapeHtml(entry.name)}</div>
-      </div>
+    return `${open}${icon}${name}</div>`;
+  }
+  return `${open}
+      <div class="file-name-col">${icon}${name}</div>
       <div class="file-type">${entry.is_dir ? 'Dossier' : (entry.extension ? entry.extension.toUpperCase() : '-')}</div>
       <div class="file-size">${entry.is_dir ? '-' : formatSize(entry.size)}</div>
       <div class="file-date">${formatDate(entry.modified)}</div>
     </div>`;
-  }
 }
 
+const LIST_COLUMNS = [
+  ['name', 'Nom', ''],
+  ['type', 'Type', ''],
+  ['size', 'Taille', ' style="text-align:right"'],
+  ['modified', 'Modifi\u00e9', ''],
+];
+
 function getListHeader() {
-  return `<div class="list-header">
-    <span data-sort="name" class="${state.sortBy === 'name' ? 'sort-active' : ''}">Nom ${state.sortBy === 'name' ? (state.sortAsc ? '\u2191' : '\u2193') : ''}</span>
-    <span data-sort="type" class="${state.sortBy === 'type' ? 'sort-active' : ''}">Type ${state.sortBy === 'type' ? (state.sortAsc ? '\u2191' : '\u2193') : ''}</span>
-    <span data-sort="size" class="${state.sortBy === 'size' ? 'sort-active' : ''}" style="text-align:right">Taille ${state.sortBy === 'size' ? (state.sortAsc ? '\u2191' : '\u2193') : ''}</span>
-    <span data-sort="modified" class="${state.sortBy === 'modified' ? 'sort-active' : ''}">Modifi\u00e9 ${state.sortBy === 'modified' ? (state.sortAsc ? '\u2191' : '\u2193') : ''}</span>
-  </div>`;
+  const cols = LIST_COLUMNS.map(([key, label, style]) => {
+    const active = state.sortBy === key;
+    const arrow = active ? (state.sortAsc ? '\u2191' : '\u2193') : '';
+    return `<span data-sort="${key}" class="${active ? 'sort-active' : ''}"${style}>${label} ${arrow}</span>`;
+  }).join('');
+  return `<div class="list-header">${cols}</div>`;
 }
 
 function cleanupVirtual() {

@@ -131,39 +131,30 @@ fn list_directory_sync(path: String, show_hidden: bool) -> Result<Vec<FileEntry>
 #[tauri::command]
 fn get_quick_access() -> Vec<QuickAccess> {
     let home = dirs_home();
-    let desktop = format!("{}/Desktop", home);
-    let documents = format!("{}/Documents", home);
-    let pictures = format!("{}/Pictures", home);
-    let music = format!("{}/Music", home);
-    let videos = format!("{}/Videos", home);
 
     // Prefer Téléchargements over Downloads (avoid duplicates from symlinks)
-    let telechargements = format!("{}/Téléchargements", home);
-    let downloads = format!("{}/Downloads", home);
-    let dl_path = if Path::new(&telechargements).exists() {
-        &telechargements
+    let dl = if Path::new(&format!("{}/T\u{00e9}l\u{00e9}chargements", home)).exists() {
+        "T\u{00e9}l\u{00e9}chargements"
     } else {
-        &downloads
+        "Downloads"
     };
 
-    let prism = format!("{}/.local/share/PrismLauncher/instances", home);
-
-    let dirs: Vec<(&str, &str, &str)> = vec![
-        ("Accueil", &home, "home"),
-        ("Bureau", &desktop, "desktop"),
-        ("Documents", &documents, "documents"),
-        ("T\u{00e9}l\u{00e9}chargements", dl_path, "downloads"),
-        ("Images", &pictures, "images"),
-        ("Musique", &music, "music"),
-        ("Vid\u{00e9}os", &videos, "videos"),
-        ("Prism Launcher", &prism, "gaming"),
+    let dirs = [
+        ("Accueil", home.clone(), "home"),
+        ("Bureau", format!("{}/Desktop", home), "desktop"),
+        ("Documents", format!("{}/Documents", home), "documents"),
+        ("T\u{00e9}l\u{00e9}chargements", format!("{}/{}", home, dl), "downloads"),
+        ("Images", format!("{}/Pictures", home), "images"),
+        ("Musique", format!("{}/Music", home), "music"),
+        ("Vid\u{00e9}os", format!("{}/Videos", home), "videos"),
+        ("Prism Launcher", format!("{}/.local/share/PrismLauncher/instances", home), "gaming"),
     ];
 
     dirs.into_iter()
         .filter(|(_, path, _)| Path::new(path).exists())
         .map(|(name, path, icon)| QuickAccess {
             name: name.to_string(),
-            path: path.to_string(),
+            path,
             icon: icon.to_string(),
         })
         .collect()
@@ -232,6 +223,10 @@ fn delete_items_sync(paths: Vec<String>) -> Result<(), String> {
 // Cancellation flag for in-progress operations
 static OPERATION_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+fn op_cancelled() -> bool {
+    OPERATION_CANCEL.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 #[tauri::command]
 fn cancel_operation() {
     OPERATION_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -293,6 +288,34 @@ async fn copy_items_progress(
         .map_err(|e| e.to_string())?
 }
 
+// Shared progress state for a copy operation, threaded through the recursion
+struct CopyProgress {
+    app: AppHandle,
+    operation_id: String,
+    bytes_total: u64,
+    files_total: u64,
+    bytes_done: u64,
+    files_done: u64,
+    last_emit: Instant,
+}
+
+impl CopyProgress {
+    fn emit(&mut self, current_file: &str, force: bool) {
+        if !force && self.last_emit.elapsed() < Duration::from_millis(100) {
+            return;
+        }
+        self.last_emit = Instant::now();
+        let _ = self.app.emit("copy-progress", ProgressUpdate {
+            operation_id: self.operation_id.clone(),
+            current_file: current_file.to_string(),
+            bytes_done: self.bytes_done,
+            bytes_total: self.bytes_total,
+            files_done: self.files_done,
+            files_total: self.files_total,
+        });
+    }
+}
+
 fn copy_items_progress_sync(
     sources: Vec<String>,
     destination: String,
@@ -304,106 +327,70 @@ fn copy_items_progress_sync(
         return Err(format!("Destination is not a directory: {}", destination));
     }
 
-    let (total_bytes, total_files) = count_total_size(&sources);
-    let mut bytes_done = 0u64;
-    let mut files_done = 0u64;
+    let (bytes_total, files_total) = count_total_size(&sources);
+    let mut progress = CopyProgress {
+        app,
+        operation_id,
+        bytes_total,
+        files_total,
+        bytes_done: 0,
+        files_done: 0,
+        last_emit: Instant::now(),
+    };
 
     for src in &sources {
-        if OPERATION_CANCEL.load(std::sync::atomic::Ordering::SeqCst) {
+        if op_cancelled() {
             return Err("Annule".to_string());
         }
         let src_path = Path::new(src);
         let file_name = src_path.file_name().ok_or_else(|| "Invalid path".to_string())?;
-        let target = dest.join(file_name);
-        let target = unique_path(&target);
+        let target = unique_path(&dest.join(file_name));
         if src_path.is_dir() {
-            copy_dir_progress(src_path, &target, &operation_id, &app, &mut bytes_done, &mut files_done, total_bytes, total_files)?;
+            copy_dir_progress(src_path, &target, &mut progress)?;
         } else {
-            copy_file_progress(src_path, &target, &operation_id, &app, &mut bytes_done, &mut files_done, total_bytes, total_files)?;
+            copy_file_progress(src_path, &target, &mut progress)?;
         }
     }
     Ok(())
 }
 
-fn emit_progress(
-    app: &AppHandle,
-    operation_id: &str,
-    current_file: &str,
-    bytes_done: u64,
-    bytes_total: u64,
-    files_done: u64,
-    files_total: u64,
-) {
-    let _ = app.emit("copy-progress", ProgressUpdate {
-        operation_id: operation_id.to_string(),
-        current_file: current_file.to_string(),
-        bytes_done,
-        bytes_total,
-        files_done,
-        files_total,
-    });
-}
-
-fn copy_file_progress(
-    src: &Path,
-    dst: &Path,
-    operation_id: &str,
-    app: &AppHandle,
-    bytes_done: &mut u64,
-    files_done: &mut u64,
-    total_bytes: u64,
-    total_files: u64,
-) -> Result<(), String> {
+fn copy_file_progress(src: &Path, dst: &Path, progress: &mut CopyProgress) -> Result<(), String> {
     use std::io::{Read, Write};
     let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-    emit_progress(app, operation_id, &name, *bytes_done, total_bytes, *files_done, total_files);
+    progress.emit(&name, true);
 
     let mut input = fs::File::open(src).map_err(|e| format!("Open {}: {}", src.display(), e))?;
     let mut output = fs::File::create(dst).map_err(|e| format!("Create {}: {}", dst.display(), e))?;
     let mut buf = vec![0u8; 64 * 1024];
-    let mut last_emit = Instant::now();
 
     loop {
-        if OPERATION_CANCEL.load(std::sync::atomic::Ordering::SeqCst) {
+        if op_cancelled() {
             let _ = fs::remove_file(dst);
             return Err("Annule".to_string());
         }
         let n = input.read(&mut buf).map_err(|e| format!("Read: {}", e))?;
         if n == 0 { break; }
         output.write_all(&buf[..n]).map_err(|e| format!("Write: {}", e))?;
-        *bytes_done += n as u64;
-
-        if last_emit.elapsed() >= Duration::from_millis(100) {
-            emit_progress(app, operation_id, &name, *bytes_done, total_bytes, *files_done, total_files);
-            last_emit = Instant::now();
-        }
+        progress.bytes_done += n as u64;
+        progress.emit(&name, false);
     }
-    *files_done += 1;
+    progress.files_done += 1;
     Ok(())
 }
 
-fn copy_dir_progress(
-    src: &Path,
-    dst: &Path,
-    operation_id: &str,
-    app: &AppHandle,
-    bytes_done: &mut u64,
-    files_done: &mut u64,
-    total_bytes: u64,
-    total_files: u64,
-) -> Result<(), String> {
+fn copy_dir_progress(src: &Path, dst: &Path, progress: &mut CopyProgress) -> Result<(), String> {
     fs::create_dir_all(dst).map_err(|e| format!("Cannot create dir: {}", e))?;
     for entry in fs::read_dir(src).map_err(|e| format!("Cannot read dir: {}", e))? {
-        if OPERATION_CANCEL.load(std::sync::atomic::Ordering::SeqCst) {
+        if op_cancelled() {
             return Err("Annule".to_string());
         }
         let entry = entry.map_err(|e| format!("Read error: {}", e))?;
         let src_child = entry.path();
         let dst_child = dst.join(entry.file_name());
         if src_child.is_dir() {
-            copy_dir_progress(&src_child, &dst_child, operation_id, app, bytes_done, files_done, total_bytes, total_files)?;
+            copy_dir_progress(&src_child, &dst_child, progress)?;
         } else {
-            copy_file_progress(&src_child, &dst_child, operation_id, app, bytes_done, files_done, total_bytes, total_files)?;
+            copy_file_progress(&src_child, &dst_child, progress)?;
         }
     }
     Ok(())
@@ -512,61 +499,38 @@ async fn autocomplete_path(partial: String) -> Vec<String> {
 fn autocomplete_path_sync(partial: String) -> Vec<String> {
     let path = Path::new(&partial);
 
-    // If partial ends with '/', list contents of that directory
-    if partial.ends_with('/') && path.is_dir() {
-        return match fs::read_dir(path) {
-            Ok(entries) => {
-                let mut results: Vec<String> = entries
-                    .flatten()
-                    .map(|e| {
-                        let p = e.path();
-                        if p.is_dir() {
-                            format!("{}/", p.to_string_lossy())
-                        } else {
-                            p.to_string_lossy().to_string()
-                        }
-                    })
-                    .collect();
-                results.sort_by_cached_key(|s| (!s.ends_with('/'), s.to_lowercase()));
-                results.truncate(20);
-                results
+    // Trailing '/' on a directory: list its contents; otherwise complete the
+    // last segment against its parent directory
+    let (dir, prefix) = if partial.ends_with('/') && path.is_dir() {
+        (path.to_path_buf(), String::new())
+    } else {
+        (
+            path.parent().unwrap_or(Path::new("/")).to_path_buf(),
+            path.file_name().map(|f| f.to_string_lossy().to_lowercase()).unwrap_or_default(),
+        )
+    };
+
+    let Ok(entries) = fs::read_dir(&dir) else { return Vec::new() };
+
+    let mut results: Vec<String> = entries
+        .flatten()
+        .filter(|e| {
+            prefix.is_empty()
+                || e.file_name().to_string_lossy().to_lowercase().starts_with(&prefix)
+        })
+        .map(|e| {
+            let p = e.path();
+            if p.is_dir() {
+                format!("{}/", p.to_string_lossy())
+            } else {
+                p.to_string_lossy().to_string()
             }
-            Err(_) => Vec::new(),
-        };
-    }
+        })
+        .collect();
 
-    // Otherwise, get parent dir and match prefix
-    let parent = path.parent().unwrap_or(Path::new("/"));
-    let prefix = path
-        .file_name()
-        .map(|f| f.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-
-    match fs::read_dir(parent) {
-        Ok(entries) => {
-            let mut results: Vec<String> = entries
-                .flatten()
-                .filter(|e| {
-                    e.file_name()
-                        .to_string_lossy()
-                        .to_lowercase()
-                        .starts_with(&prefix)
-                })
-                .map(|e| {
-                    let p = e.path();
-                    if p.is_dir() {
-                        format!("{}/", p.to_string_lossy())
-                    } else {
-                        p.to_string_lossy().to_string()
-                    }
-                })
-                .collect();
-            results.sort_by_cached_key(|s| (!s.ends_with('/'), s.to_lowercase()));
-            results.truncate(20);
-            results
-        }
-        Err(_) => Vec::new(),
-    }
+    results.sort_by_cached_key(|s| (!s.ends_with('/'), s.to_lowercase()));
+    results.truncate(20);
+    results
 }
 
 #[tauri::command]
@@ -650,6 +614,14 @@ async fn search_files(
         .map_err(|e| e.to_string())?
 }
 
+struct SearchOpts {
+    query: String,
+    show_hidden: bool,
+    max_depth: usize,
+    max_results: usize,
+    search_content: bool,
+}
+
 fn search_files_sync(
     path: String,
     query: String,
@@ -658,35 +630,20 @@ fn search_files_sync(
     max_results: Option<usize>,
     search_content: Option<bool>,
 ) -> Result<Vec<FileEntry>, String> {
-    let mut results = Vec::new();
-    let query_lower = query.to_lowercase();
-    let depth_limit = max_depth.unwrap_or(10);
-    let result_limit = max_results.unwrap_or(500);
-    let content = search_content.unwrap_or(false);
-    search_recursive(
-        Path::new(&path),
-        &query_lower,
+    let opts = SearchOpts {
+        query: query.to_lowercase(),
         show_hidden,
-        &mut results,
-        0,
-        depth_limit,
-        result_limit,
-        content,
-    );
+        max_depth: max_depth.unwrap_or(10),
+        max_results: max_results.unwrap_or(500),
+        search_content: search_content.unwrap_or(false),
+    };
+    let mut results = Vec::new();
+    search_recursive(Path::new(&path), &opts, &mut results, 0);
     Ok(results)
 }
 
-fn search_recursive(
-    dir: &Path,
-    query: &str,
-    show_hidden: bool,
-    results: &mut Vec<FileEntry>,
-    depth: usize,
-    max_depth: usize,
-    max_results: usize,
-    search_content: bool,
-) {
-    if depth > max_depth || results.len() >= max_results {
+fn search_recursive(dir: &Path, opts: &SearchOpts, results: &mut Vec<FileEntry>, depth: usize) {
+    if depth > opts.max_depth || results.len() >= opts.max_results {
         return;
     }
 
@@ -696,14 +653,12 @@ fn search_recursive(
     };
 
     for entry in entries.flatten() {
-        if results.len() >= max_results {
+        if results.len() >= opts.max_results {
             return;
         }
 
         let name = entry.file_name().to_string_lossy().to_string();
-        let is_hidden = name.starts_with('.');
-
-        if !show_hidden && is_hidden {
+        if !opts.show_hidden && name.starts_with('.') {
             continue;
         }
 
@@ -713,21 +668,21 @@ fn search_recursive(
             Err(_) => continue,
         };
 
-        let name_match = name.to_lowercase().contains(query);
+        let name_match = name.to_lowercase().contains(&opts.query);
 
         // Content search for text files
-        let content_match = if !name_match && search_content && !metadata.is_dir() && metadata.len() < 1_000_000 {
-            file_contains(&path_buf, query)
-        } else {
-            false
-        };
+        let content_match = !name_match
+            && opts.search_content
+            && !metadata.is_dir()
+            && metadata.len() < 1_000_000
+            && file_contains(&path_buf, &opts.query);
 
         if name_match || content_match {
             results.push(make_file_entry(name, &path_buf, &metadata));
         }
 
         if metadata.is_dir() && !metadata.is_symlink() {
-            search_recursive(&path_buf, query, show_hidden, results, depth + 1, max_depth, max_results, search_content);
+            search_recursive(&path_buf, opts, results, depth + 1);
         }
     }
 }
@@ -1140,28 +1095,25 @@ fn list_trash_sync() -> Result<Vec<TrashItem>, String> {
     Ok(result)
 }
 
+// Trash items are identified by their original path (see list_trash)
+fn select_trash_items(ids: &[String]) -> Result<Vec<trash::TrashItem>, String> {
+    Ok(trash::os_limited::list()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|item| ids.contains(&item.original_path().to_string_lossy().to_string()))
+        .collect())
+}
+
 #[tauri::command]
 fn restore_trash_items(ids: Vec<String>) -> Result<(), String> {
-    use trash::os_limited;
-    let all = os_limited::list().map_err(|e| e.to_string())?;
-    let to_restore: Vec<_> = all.into_iter()
-        .filter(|item| ids.contains(&item.original_path().to_string_lossy().to_string()))
-        .collect();
-
-    os_limited::restore_all(to_restore).map_err(|e| format!("Restore failed: {}", e))?;
-    Ok(())
+    trash::os_limited::restore_all(select_trash_items(&ids)?)
+        .map_err(|e| format!("Restore failed: {}", e))
 }
 
 #[tauri::command]
 fn purge_trash_items(ids: Vec<String>) -> Result<(), String> {
-    use trash::os_limited;
-    let all = os_limited::list().map_err(|e| e.to_string())?;
-    let to_purge: Vec<_> = all.into_iter()
-        .filter(|item| ids.contains(&item.original_path().to_string_lossy().to_string()))
-        .collect();
-
-    os_limited::purge_all(to_purge).map_err(|e| format!("Purge failed: {}", e))?;
-    Ok(())
+    trash::os_limited::purge_all(select_trash_items(&ids)?)
+        .map_err(|e| format!("Purge failed: {}", e))
 }
 
 #[tauri::command]
@@ -1301,13 +1253,11 @@ fn batch_rename_preview(
     case_mode: String,
     start_index: u32,
 ) -> Result<Vec<RenamePreview>, String> {
-    let mut results = Vec::new();
-    let regex = if use_regex && !find.is_empty() {
-        Some(regex_lite_compile(&find).map_err(|e| format!("Regex invalide: {}", e))?)
-    } else {
-        None
-    };
+    // Regex mode is not implemented: both modes do a plain substring replace.
+    // Kept in the signature for frontend compatibility.
+    let _ = use_regex;
 
+    let mut results = Vec::new();
     for (i, path) in paths.iter().enumerate() {
         let p = Path::new(path);
         let original_name = p.file_name()
@@ -1324,11 +1274,7 @@ fn batch_rename_preview(
 
         // Apply find/replace
         if !find.is_empty() {
-            if let Some(ref re) = regex {
-                new_stem = regex_lite_replace(re, &new_stem, &replace);
-            } else {
-                new_stem = new_stem.replace(&find, &replace);
-            }
+            new_stem = new_stem.replace(&find, &replace);
         }
 
         // Apply pattern (supports {n}, {N}, {name}, {ext})
@@ -1399,18 +1345,6 @@ fn title_case(s: &str) -> String {
         .join(" ")
 }
 
-// Tiny regex wrapper - we don't need a full regex crate, use simple wildcard matching
-fn regex_lite_compile(pattern: &str) -> Result<String, String> {
-    // For now, just validate it's not empty
-    if pattern.is_empty() { return Err("empty".to_string()); }
-    Ok(pattern.to_string())
-}
-
-fn regex_lite_replace(pattern: &str, input: &str, replacement: &str) -> String {
-    // Simple substring replace for now (regex would need a crate)
-    input.replace(pattern, replacement)
-}
-
 // ============================================
 // MOUNT POINTS
 // ============================================
@@ -1450,23 +1384,11 @@ fn get_mount_points() -> Result<Vec<MountPoint>, String> {
         if matches!(fs_type, "proc" | "sysfs" | "tmpfs" | "devtmpfs" | "devpts" | "cgroup" | "cgroup2" | "pstore" | "bpf" | "tracefs" | "debugfs" | "mqueue" | "hugetlbfs" | "configfs" | "fusectl" | "fuse.gvfsd-fuse" | "autofs" | "binfmt_misc" | "rpc_pipefs" | "nfsd" | "squashfs" | "overlay") { continue; }
 
         // Skip system mount points (typical Linux FHS that users don't browse manually)
-        if mount_point.starts_with("/snap/")
-            || mount_point.starts_with("/var/")
-            || mount_point.starts_with("/run/")
-            || mount_point.starts_with("/sys/")
-            || mount_point.starts_with("/proc/")
-            || mount_point.starts_with("/dev/")
-            || mount_point == "/boot"
-            || mount_point.starts_with("/boot/")
-            || mount_point == "/efi"
-            || mount_point.starts_with("/efi/")
-            || mount_point == "/root"
-            || mount_point.starts_with("/root/")
-            || mount_point == "/srv"
-            || mount_point.starts_with("/srv/")
-            || mount_point == "/tmp"
-            || mount_point.starts_with("/tmp/")
-        { continue; }
+        const SYSTEM_MOUNTS: &[&str] =
+            &["/snap", "/var", "/run", "/sys", "/proc", "/dev", "/boot", "/efi", "/root", "/srv", "/tmp"];
+        if SYSTEM_MOUNTS.iter().any(|base| {
+            mount_point == *base || mount_point.strip_prefix(base).is_some_and(|rest| rest.starts_with('/'))
+        }) { continue; }
 
         let is_root = mount_point == "/";
         if is_root {
@@ -1631,33 +1553,20 @@ fn create_archive_sync(sources: Vec<String>, destination: String, format: String
         .filter_map(|s| Path::new(s).file_name().map(|n| n.to_string_lossy().to_string()))
         .collect();
 
-    let status = match format.as_str() {
-        "zip" => {
-            let mut cmd = Command::new("zip");
-            cmd.arg("-r").arg(&destination);
-            for n in &names { cmd.arg(n); }
-            cmd.current_dir(parent).status()
-        }
-        "tar.gz" => {
-            let mut cmd = Command::new("tar");
-            cmd.arg("-czf").arg(&destination);
-            for n in &names { cmd.arg(n); }
-            cmd.current_dir(parent).status()
-        }
-        "tar.xz" => {
-            let mut cmd = Command::new("tar");
-            cmd.arg("-cJf").arg(&destination);
-            for n in &names { cmd.arg(n); }
-            cmd.current_dir(parent).status()
-        }
-        "7z" => {
-            let mut cmd = Command::new("7z");
-            cmd.arg("a").arg(&destination);
-            for n in &names { cmd.arg(n); }
-            cmd.current_dir(parent).status()
-        }
+    let (tool, flag) = match format.as_str() {
+        "zip" => ("zip", "-r"),
+        "tar.gz" => ("tar", "-czf"),
+        "tar.xz" => ("tar", "-cJf"),
+        "7z" => ("7z", "a"),
         _ => return Err(format!("Format non supporte: {}", format)),
     };
+
+    let status = Command::new(tool)
+        .arg(flag)
+        .arg(&destination)
+        .args(&names)
+        .current_dir(parent)
+        .status();
 
     match status {
         Ok(s) if s.success() => Ok(()),
