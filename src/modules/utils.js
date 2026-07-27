@@ -5,36 +5,45 @@ export function formatSize(bytes) {
   return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
 }
 
+// Cache today's/yesterday's calendar keys, recomputed at most once a minute,
+// so rendering large directories doesn't build 4 Date objects per row
+let dayCache = { at: 0, todayKey: 0, yesterdayKey: 0 };
+
+function dateKey(d) {
+  return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate();
+}
+
+function refreshDayCache() {
+  const now = Date.now();
+  if (now - dayCache.at < 60000) return;
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  dayCache = { at: now, todayKey: dateKey(today), yesterdayKey: dateKey(yesterday) };
+}
+
 export function formatDate(timestamp) {
   if (!timestamp) return '-';
   const date = new Date(timestamp * 1000);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const fileDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  refreshDayCache();
 
   const time = date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const key = dateKey(date);
 
-  if (fileDate.getTime() === today.getTime()) {
-    return `Aujourd'hui ${time}`;
-  }
-
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (fileDate.getTime() === yesterday.getTime()) {
-    return `Hier ${time}`;
-  }
+  if (key === dayCache.todayKey) return `Aujourd'hui ${time}`;
+  if (key === dayCache.yesterdayKey) return `Hier ${time}`;
 
   return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + time;
 }
 
+const HTML_ESCAPE_RE = /[&<>"']/g;
+const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
 export function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  return String(str).replace(HTML_ESCAPE_RE, (c) => HTML_ESCAPES[c]);
 }
 
 export function escapeAttr(str) {
-  return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return escapeHtml(str);
 }
 
 export function showLoading(show) {

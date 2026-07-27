@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { invoke } from './state.js';
 import { navigateTo, goBack, goForward, goUp, refresh, showPathInput } from './navigation.js';
-import { renderEntries, sortEntries, updateSelection, setViewMode, toggleHidden } from './files.js';
+import { renderEntries, getCurrentEntries, updateSelection, setViewMode, toggleHidden } from './files.js';
 import { clipboardCopy, clipboardCut, clipboardPaste } from './clipboard.js';
 import { showRenameDialog, showNewFolderDialog, showDeleteDialog } from './dialogs.js';
 import { startInlineRename } from './inline-rename.js';
@@ -131,7 +131,7 @@ export function setupKeyboard() {
     // Home / End
     if (e.key === 'Home' || e.key === 'End') {
       e.preventDefault();
-      const sorted = sortEntries(state.entries);
+      const sorted = getCurrentEntries();
       if (sorted.length === 0) return;
       const target = e.key === 'Home' ? sorted[0] : sorted[sorted.length - 1];
       state.selected.clear();
@@ -152,7 +152,7 @@ export function setupKeyboard() {
 
     if (e.ctrlKey && e.key === 'a') {
       e.preventDefault();
-      state.entries.forEach(e => state.selected.add(e.path));
+      getCurrentEntries().forEach(e => state.selected.add(e.path));
       updateSelection();
       return;
     }
@@ -170,7 +170,9 @@ export function setupKeyboard() {
 }
 
 function navigateByArrow(key, shiftKey) {
-  const sorted = sortEntries(state.entries);
+  // Use the displayed list so keyboard navigation matches what's on screen
+  // (search + filters applied), instead of re-sorting all entries per keypress
+  const sorted = getCurrentEntries();
   if (sorted.length === 0) return;
 
   let currentIndex = state.lastSelected ?? -1;
