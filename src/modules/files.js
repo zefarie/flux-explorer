@@ -28,6 +28,9 @@ function scheduleLoadThumbnails() {
   }, 80);
 }
 
+// Case-insensitive collator: much faster than toLowerCase()+localeCompare per comparison
+const nameCollator = new Intl.Collator(undefined, { sensitivity: 'accent' });
+
 export function sortEntries(entries) {
   return [...entries].sort((a, b) => {
     if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
@@ -35,7 +38,7 @@ export function sortEntries(entries) {
     let cmp = 0;
     switch (state.sortBy) {
       case 'name':
-        cmp = a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+        cmp = nameCollator.compare(a.name, b.name);
         break;
       case 'size':
         cmp = a.size - b.size;
@@ -44,11 +47,16 @@ export function sortEntries(entries) {
         cmp = a.modified - b.modified;
         break;
       case 'type':
-        cmp = a.extension.localeCompare(b.extension) || a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+        cmp = nameCollator.compare(a.extension, b.extension) || nameCollator.compare(a.name, b.name);
         break;
     }
     return state.sortAsc ? cmp : -cmp;
   });
+}
+
+// Entries as currently displayed (search + filters + sort applied)
+export function getCurrentEntries() {
+  return currentEntries;
 }
 
 function renderItemHtml(entry, index) {

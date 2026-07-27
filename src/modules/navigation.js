@@ -7,10 +7,17 @@ import { updateActiveTabName } from './tabs.js';
 import { loadGitStatus } from './git.js';
 import { trackVisit } from './recent.js';
 
+// Monotonic token so a slow list_directory (or late git status) from a
+// previous navigation can't clobber the view of a newer one
+let navSeq = 0;
+
 export async function navigateTo(path, addToHistory = true) {
+  const seq = ++navSeq;
   showLoading(true);
   try {
     const entries = await invoke('list_directory', { path, showHidden: state.showHidden });
+    if (seq !== navSeq) return; // superseded by a newer navigation
+
     state.entries = entries;
     state.currentPath = path;
     state.selected.clear();
@@ -26,6 +33,7 @@ export async function navigateTo(path, addToHistory = true) {
 
     // Load git status (non-blocking, will refresh icons after)
     loadGitStatus(path).then(() => {
+      if (seq !== navSeq) return;
       renderEntries();
       updateStatusBar();
     });
@@ -40,6 +48,7 @@ export async function navigateTo(path, addToHistory = true) {
     trackVisit(path);
     invoke('watch_directory', { path }).catch(() => {});
   } catch (err) {
+    if (seq !== navSeq) return;
     showToast(err, 'error');
   }
   showLoading(false);

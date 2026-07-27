@@ -56,6 +56,45 @@ async fn list_directory(path: String, show_hidden: bool) -> Result<Vec<FileEntry
         .map_err(|e| e.to_string())?
 }
 
+fn make_file_entry(name: String, path_buf: &Path, metadata: &fs::Metadata) -> FileEntry {
+    let is_hidden = name.starts_with('.');
+    let is_symlink = metadata.is_symlink();
+
+    // For symlinks, report the target's type/size; fall back to the link itself
+    let (is_dir, size) = if is_symlink {
+        match fs::metadata(path_buf) {
+            Ok(m) => (m.is_dir(), if m.is_dir() { 0 } else { m.len() }),
+            Err(_) => (metadata.is_dir(), if metadata.is_dir() { 0 } else { metadata.len() }),
+        }
+    } else {
+        (metadata.is_dir(), if metadata.is_dir() { 0 } else { metadata.len() })
+    };
+
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    let extension = path_buf
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    FileEntry {
+        name,
+        path: path_buf.to_string_lossy().to_string(),
+        is_dir,
+        is_hidden,
+        is_symlink,
+        size,
+        modified,
+        extension,
+        permissions: format_permissions(metadata.permissions().mode()),
+    }
+}
+
 fn list_directory_sync(path: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
     let dir_path = Path::new(&path);
     if !dir_path.exists() {
@@ -70,9 +109,7 @@ fn list_directory_sync(path: String, show_hidden: bool) -> Result<Vec<FileEntry>
 
     for entry in read_dir.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        let is_hidden = name.starts_with('.');
-
-        if !show_hidden && is_hidden {
+        if !show_hidden && name.starts_with('.') {
             continue;
         }
 
@@ -82,46 +119,11 @@ fn list_directory_sync(path: String, show_hidden: bool) -> Result<Vec<FileEntry>
             Err(_) => continue,
         };
 
-        let is_symlink = metadata.is_symlink();
-        let real_metadata = if is_symlink {
-            fs::metadata(&path_buf).unwrap_or(metadata.clone())
-        } else {
-            metadata.clone()
-        };
-
-        let modified = metadata
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-
-        let extension = path_buf
-            .extension()
-            .map(|e| e.to_string_lossy().to_lowercase())
-            .unwrap_or_default();
-
-        let permissions = format_permissions(metadata.permissions().mode());
-
-        entries.push(FileEntry {
-            name,
-            path: path_buf.to_string_lossy().to_string(),
-            is_dir: real_metadata.is_dir(),
-            is_hidden,
-            is_symlink,
-            size: if real_metadata.is_dir() { 0 } else { real_metadata.len() },
-            modified,
-            extension,
-            permissions,
-        });
+        entries.push(make_file_entry(name, &path_buf, &metadata));
     }
 
     // Sort: directories first, then alphabetically (case-insensitive)
-    entries.sort_by(|a, b| {
-        b.is_dir
-            .cmp(&a.is_dir)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
+    entries.sort_by_cached_key(|e| (!e.is_dir, e.name.to_lowercase()));
 
     Ok(entries)
 }
@@ -501,7 +503,13 @@ fn unique_path(path: &Path) -> PathBuf {
 }
 
 #[tauri::command]
-fn autocomplete_path(partial: String) -> Vec<String> {
+async fn autocomplete_path(partial: String) -> Vec<String> {
+    tokio::task::spawn_blocking(move || autocomplete_path_sync(partial))
+        .await
+        .unwrap_or_default()
+}
+
+fn autocomplete_path_sync(partial: String) -> Vec<String> {
     let path = Path::new(&partial);
 
     // If partial ends with '/', list contents of that directory
@@ -519,12 +527,9 @@ fn autocomplete_path(partial: String) -> Vec<String> {
                         }
                     })
                     .collect();
-                results.sort_by(|a, b| {
-                    let a_dir = a.ends_with('/');
-                    let b_dir = b.ends_with('/');
-                    b_dir.cmp(&a_dir).then_with(|| a.to_lowercase().cmp(&b.to_lowercase()))
-                });
-                results.into_iter().take(20).collect()
+                results.sort_by_cached_key(|s| (!s.ends_with('/'), s.to_lowercase()));
+                results.truncate(20);
+                results
             }
             Err(_) => Vec::new(),
         };
@@ -556,19 +561,22 @@ fn autocomplete_path(partial: String) -> Vec<String> {
                     }
                 })
                 .collect();
-            results.sort_by(|a, b| {
-                let a_dir = a.ends_with('/');
-                let b_dir = b.ends_with('/');
-                b_dir.cmp(&a_dir).then_with(|| a.to_lowercase().cmp(&b.to_lowercase()))
-            });
-            results.into_iter().take(20).collect()
+            results.sort_by_cached_key(|s| (!s.ends_with('/'), s.to_lowercase()));
+            results.truncate(20);
+            results
         }
         Err(_) => Vec::new(),
     }
 }
 
 #[tauri::command]
-fn read_text_preview(path: String, max_lines: u32) -> Result<String, String> {
+async fn read_text_preview(path: String, max_lines: u32) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || read_text_preview_sync(path, max_lines))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn read_text_preview_sync(path: String, max_lines: u32) -> Result<String, String> {
     let file = fs::File::open(&path).map_err(|e| format!("Cannot open file: {}", e))?;
     let reader = BufReader::new(file);
     let mut lines = Vec::new();
@@ -715,38 +723,7 @@ fn search_recursive(
         };
 
         if name_match || content_match {
-            let is_symlink = metadata.is_symlink();
-            let real_metadata = if is_symlink {
-                fs::metadata(&path_buf).unwrap_or(metadata.clone())
-            } else {
-                metadata.clone()
-            };
-
-            let modified = metadata
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0);
-
-            let extension = path_buf
-                .extension()
-                .map(|e| e.to_string_lossy().to_lowercase())
-                .unwrap_or_default();
-
-            let permissions = format_permissions(metadata.permissions().mode());
-
-            results.push(FileEntry {
-                name,
-                path: path_buf.to_string_lossy().to_string(),
-                is_dir: real_metadata.is_dir(),
-                is_hidden,
-                is_symlink,
-                size: if real_metadata.is_dir() { 0 } else { real_metadata.len() },
-                modified,
-                extension,
-                permissions,
-            });
+            results.push(make_file_entry(name, &path_buf, &metadata));
         }
 
         if metadata.is_dir() && !metadata.is_symlink() {
@@ -825,7 +802,13 @@ fn write_cached_thumb(path: &str, size: u32, jpeg_data: &[u8]) {
 }
 
 #[tauri::command]
-fn get_thumbnail(path: String, size: u32) -> Result<String, String> {
+async fn get_thumbnail(path: String, size: u32) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || get_thumbnail_sync(path, size))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_thumbnail_sync(path: String, size: u32) -> Result<String, String> {
     if let Some(cached) = read_cached_thumb(&path, size) {
         return Ok(cached);
     }
@@ -845,7 +828,13 @@ fn get_thumbnail(path: String, size: u32) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn get_video_thumbnail(path: String, size: u32) -> Result<String, String> {
+async fn get_video_thumbnail(path: String, size: u32) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || get_video_thumbnail_sync(path, size))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_video_thumbnail_sync(path: String, size: u32) -> Result<String, String> {
     if let Some(cached) = read_cached_thumb(&path, size) {
         return Ok(cached);
     }
@@ -875,7 +864,13 @@ fn get_video_thumbnail(path: String, size: u32) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn get_pdf_preview(path: String) -> Result<String, String> {
+async fn get_pdf_preview(path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || get_pdf_preview_sync(path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_pdf_preview_sync(path: String) -> Result<String, String> {
     // Use pdftoppm (poppler-utils) to render first page as JPEG
     let output = Command::new("pdftoppm")
         .args([
@@ -1112,7 +1107,13 @@ struct TrashItem {
 }
 
 #[tauri::command]
-fn list_trash() -> Result<Vec<TrashItem>, String> {
+async fn list_trash() -> Result<Vec<TrashItem>, String> {
+    tokio::task::spawn_blocking(list_trash_sync)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn list_trash_sync() -> Result<Vec<TrashItem>, String> {
     use trash::os_limited;
     let items = os_limited::list().map_err(|e| format!("Cannot list trash: {}", e))?;
 
@@ -1184,7 +1185,13 @@ struct DesktopApp {
 }
 
 #[tauri::command]
-fn list_applications() -> Result<Vec<DesktopApp>, String> {
+async fn list_applications() -> Result<Vec<DesktopApp>, String> {
+    tokio::task::spawn_blocking(list_applications_sync)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn list_applications_sync() -> Result<Vec<DesktopApp>, String> {
     let mut apps = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -1583,21 +1590,18 @@ fn extract_archive_sync(path: String, destination: String) -> Result<(), String>
         "tar.zst" => Command::new("tar").args(["--zstd", "-xf", &path, "-C", &destination]).status(),
         "7z" => Command::new("7z").args(["x", &path, &format!("-o{}", destination), "-y"]).status(),
         "rar" => Command::new("unrar").args(["x", "-o+", &path, &destination]).status(),
-        "gz" => Command::new("sh").args(["-c", &format!("gunzip -k -c '{}' > '{}/{}'",
-            path,
-            destination,
-            Path::new(&path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
-        )]).status(),
-        "xz" => Command::new("sh").args(["-c", &format!("unxz -k -c '{}' > '{}/{}'",
-            path,
-            destination,
-            Path::new(&path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
-        )]).status(),
-        "bz2" => Command::new("sh").args(["-c", &format!("bunzip2 -k -c '{}' > '{}/{}'",
-            path,
-            destination,
-            Path::new(&path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
-        )]).status(),
+        "gz" | "xz" | "bz2" => {
+            // No shell involved: decompress to stdout redirected into the target file,
+            // so paths containing quotes or spaces are handled safely
+            let tool = match kind { "gz" => "gunzip", "xz" => "unxz", _ => "bunzip2" };
+            let stem = Path::new(&path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "extracted".to_string());
+            let out_file = fs::File::create(Path::new(&destination).join(stem))
+                .map_err(|e| format!("Cannot create output file: {}", e))?;
+            Command::new(tool).arg("-c").arg(&path).stdout(out_file).status()
+        }
         _ => return Err(format!("Type non supporte: {}", kind)),
     };
 
@@ -1687,7 +1691,13 @@ struct ExifData {
 }
 
 #[tauri::command]
-fn get_exif(path: String) -> Result<ExifData, String> {
+async fn get_exif(path: String) -> Result<ExifData, String> {
+    tokio::task::spawn_blocking(move || get_exif_sync(path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_exif_sync(path: String) -> Result<ExifData, String> {
     let file = fs::File::open(&path).map_err(|e| format!("Cannot open: {}", e))?;
     let mut bufreader = std::io::BufReader::new(&file);
     let exifreader = exif::Reader::new();
@@ -1772,7 +1782,13 @@ struct GitStatus {
 }
 
 #[tauri::command]
-fn get_git_status(path: String) -> Result<GitStatus, String> {
+async fn get_git_status(path: String) -> Result<GitStatus, String> {
+    tokio::task::spawn_blocking(move || get_git_status_sync(path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn get_git_status_sync(path: String) -> Result<GitStatus, String> {
     // Find the git root by walking up
     let mut current = PathBuf::from(&path);
     let mut git_root = None;
@@ -1856,12 +1872,33 @@ struct DuplicateGroup {
     paths: Vec<String>,
 }
 
+const PARTIAL_HASH_LEN: u64 = 64 * 1024;
+
+fn hash_file(path: &Path, limit: Option<u64>) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+
+    let file = fs::File::open(path).ok()?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut reader: Box<dyn Read> = match limit {
+        Some(l) => Box::new(file.take(l)),
+        None => Box::new(file),
+    };
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(_) => return None,
+        }
+    }
+    Some(format!("{:x}", hasher.finalize()))
+}
+
 #[tauri::command]
 async fn find_duplicates(path: String) -> Result<Vec<DuplicateGroup>, String> {
     tokio::task::spawn_blocking(move || {
-        use sha2::{Sha256, Digest};
         use std::collections::HashMap;
-        use std::io::Read;
 
         // Step 1: collect all files with their sizes
         let mut by_size: HashMap<u64, Vec<PathBuf>> = HashMap::new();
@@ -1894,35 +1931,36 @@ async fn find_duplicates(path: String) -> Result<Vec<DuplicateGroup>, String> {
             }
         }
 
-        // Step 2: for sizes with >1 file, hash them
+        // Step 2: for sizes with >1 file, hash the first 64 KB to weed out
+        // different files cheaply, then full-hash only remaining candidates
         let mut groups: Vec<DuplicateGroup> = Vec::new();
         for (size, paths) in by_size {
             if paths.len() < 2 { continue; }
 
-            let mut by_hash: HashMap<String, Vec<String>> = HashMap::new();
-            for p in &paths {
-                let mut file = match fs::File::open(p) {
-                    Ok(f) => f,
-                    Err(_) => continue,
-                };
-                let mut hasher = Sha256::new();
-                let mut buf = vec![0u8; 64 * 1024];
-                let mut ok = true;
-                loop {
-                    match file.read(&mut buf) {
-                        Ok(0) => break,
-                        Ok(n) => hasher.update(&buf[..n]),
-                        Err(_) => { ok = false; break; }
+            let mut candidates: Vec<Vec<PathBuf>> = Vec::new();
+            if size <= PARTIAL_HASH_LEN {
+                candidates.push(paths);
+            } else {
+                let mut by_prefix: HashMap<String, Vec<PathBuf>> = HashMap::new();
+                for p in paths {
+                    if let Some(h) = hash_file(&p, Some(PARTIAL_HASH_LEN)) {
+                        by_prefix.entry(h).or_default().push(p);
                     }
                 }
-                if !ok { continue; }
-                let hash = format!("{:x}", hasher.finalize());
-                by_hash.entry(hash).or_default().push(p.to_string_lossy().to_string());
+                candidates.extend(by_prefix.into_values().filter(|v| v.len() >= 2));
             }
 
-            for (hash, dup_paths) in by_hash {
-                if dup_paths.len() >= 2 {
-                    groups.push(DuplicateGroup { hash, size, paths: dup_paths });
+            for group in candidates {
+                let mut by_hash: HashMap<String, Vec<String>> = HashMap::new();
+                for p in &group {
+                    if let Some(hash) = hash_file(p, None) {
+                        by_hash.entry(hash).or_default().push(p.to_string_lossy().to_string());
+                    }
+                }
+                for (hash, dup_paths) in by_hash {
+                    if dup_paths.len() >= 2 {
+                        groups.push(DuplicateGroup { hash, size, paths: dup_paths });
+                    }
                 }
             }
         }
@@ -2022,7 +2060,7 @@ fn get_disk_info(path: String) -> Result<DiskInfo, String> {
     let stat = unsafe { stat.assume_init() };
     let total = stat.f_blocks * stat.f_frsize;
     let available = stat.f_bavail * stat.f_frsize;
-    let used = total - available;
+    let used = total.saturating_sub(available);
     Ok(DiskInfo { total, available, used })
 }
 
